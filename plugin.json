@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "name": "HiFi Tidal Audio",
   "author": "kipavy",
   "description": "Tidal audio source for Spotube, served through public hifi-api instances with ISRC-accurate matching and automatic endpoint failover.",

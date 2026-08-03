@@ -1,4 +1,7 @@
-compile:
+check:
+	python3 check_scope.py
+
+compile: check
 	hetu compile src/plugin.ht build/plugin.out
 
 archive:

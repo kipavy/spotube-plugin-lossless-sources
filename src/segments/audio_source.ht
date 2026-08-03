@@ -1,6 +1,10 @@
 import "module:std" as std
 
+// Every std type touched at runtime must be resolvable here, including the
+// *class* behind an instance: calling utf8.decode() needs Utf8Codec in scope,
+// not just utf8. None of this is caught at compile time.
 var Base64 = std.Base64
+var Utf8Codec = std.Utf8Codec
 var utf8 = std.utf8
 var HttpClient = std.HttpClient
 // Never referenced directly, but the runtime resolves the type of every
