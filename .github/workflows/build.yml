@@ -41,6 +41,9 @@ jobs:
         run: make archive
         shell: bash
 
+      - name: Verify package contents
+        run: make verify
+
       - name: Upload plugin archive
         uses: actions/upload-artifact@v4
         with:
