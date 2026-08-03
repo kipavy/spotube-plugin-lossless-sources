@@ -60,4 +60,5 @@ jobs:
           omitNameDuringUpdate: true
           omitPrereleaseDuringUpdate: true
           allowUpdates: true
+          replacesArtifacts: true
           artifacts: build/plugin.smplug
