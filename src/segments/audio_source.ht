@@ -1,0 +1,238 @@
+import "module:std" as std
+
+var Base64 = std.Base64
+var utf8 = std.utf8
+var HttpClient = std.HttpClient
+var JSON = std.JSON
+
+/// Public hifi-api instances, tried in order. Each one proxies Tidal with its
+/// own account, so a dead account only costs us a fallback to the next host.
+var ENDPOINTS = [
+  "https://hifi-api-w9y8.onrender.com",
+  "https://hifi-api-bffw.onrender.com",
+]
+
+/// Requested in order. An instance backed by a lower Tidal tier silently
+/// answers with the best it has, so asking for Hi-Res first costs nothing.
+var QUALITIES = ["HI_RES_LOSSLESS", "LOSSLESS", "HIGH"]
+
+/// Tidal cover fields are bare UUIDs rather than URLs.
+fun coverUrl(cover) {
+  if (cover == null || cover == "") return ""
+  var path = cover.replaceAll("-", "/")
+  return "https://resources.tidal.com/images/${path}/320x320.jpg"
+}
+
+class Converter {
+  /// Maps a hifi-api search item to a SpotubeAudioSourceMatchObject.
+  static fun toSpotubeMatchObject(items: List) -> List {
+    if (items == null || items.isEmpty) return []
+    return items.map((item) {
+      var names = []
+      if (item["artist"] != null && item["artist"]["name"] != null) {
+        names.add(item["artist"]["name"])
+      }
+      if (item["artists"] != null) {
+        for (var artist in item["artists"]) {
+          var name = artist["name"]
+          if (name != null && !names.contains(name)) names.add(name)
+        }
+      }
+      if (names.isEmpty) names.add("Unknown")
+
+      var album = item["album"]
+      var cover = album != null ? album["cover"] : null
+
+      return {
+        "id": item["id"].toString(),
+        "title": item["title"] ?? "",
+        "artists": names,
+        "duration": (item["duration"] ?? 0) * 1000,
+        "thumbnail": coverUrl(cover),
+        "externalUri": "https://tidal.com/browse/track/${item["id"]}",
+        "isrc": item["isrc"] ?? "",
+        "album": album != null ? (album["title"] ?? "") : "",
+      }.toJson()
+    }).toList()
+  }
+}
+
+class AudioSourceEndpoint {
+  var client: HttpClient
+
+  construct (this.client)
+
+  get supportedPresets -> List {
+    return [
+      {
+        type: "lossless",
+        name: "flac",
+        qualities: [
+          { bitDepth: 24, sampleRate: 96000 },
+          { bitDepth: 16, sampleRate: 44100 },
+        ],
+      }.toJson(),
+      {
+        type: "lossy",
+        name: "mp4",
+        qualities: [
+          { bitrate: 320000 },
+        ],
+      }.toJson(),
+    ]
+  }
+
+  /// Searches one endpoint, falling through to the next when a host is asleep,
+  /// blocked, or returns nothing useful.
+  fun searchFrom(index: int, query: String) -> Future {
+    if (index >= ENDPOINTS.length) return Future.value([])
+
+    return client.get_req(
+      "${ENDPOINTS[index]}/search/",
+      queryParameters: { "s": query, "limit": 20 }.toJson(),
+    ).then((res) {
+      if (res.statusCode != 200 || res.data == null) {
+        return searchFrom(index + 1, query)
+      }
+      var payload = res.data["data"]
+      if (payload == null) return searchFrom(index + 1, query)
+
+      var items = payload["items"]
+      if (items == null || items.isEmpty) return searchFrom(index + 1, query)
+
+      return items
+    })
+  }
+
+  /// Ranks an exact ISRC hit first. Spotube hands us the ISRC from the metadata
+  /// provider, and hifi-api returns it per result, so when both are present the
+  /// match is exact rather than guessed from the title.
+  fun rank(items: List, isrc) -> List {
+    if (items == null || items.isEmpty) return []
+    if (isrc == null || isrc == "") return items
+
+    var wanted = isrc.toUpperCase()
+    var ordered = []
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (candidate != null && candidate.toUpperCase() == wanted) ordered.add(item)
+    }
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (candidate == null || candidate.toUpperCase() != wanted) ordered.add(item)
+    }
+    return ordered
+  }
+
+  /// Find matching audio sources for a given track. The first match is
+  /// considered the best match.
+  /// @param track - Map<SpotubeTrackObject>
+  /// @returns Future<List<SpotubeAudioSourceMatchObject>>
+  fun matches(track: Map) -> List {
+    if (track == null) return Future.value([])
+
+    var name = track["name"] ?? ""
+    if (name == "") return Future.value([])
+
+    var names = []
+    if (track["artists"] != null) {
+      for (var artist in track["artists"]) {
+        var artistName = (artist is Map) ? artist["name"] : artist.toString()
+        if (artistName != null && artistName != "") names.add(artistName)
+      }
+    }
+
+    var artistText = names.join(", ")
+    var query = names.isEmpty ? name : "${name} ${artistText}"
+
+    return searchFrom(0, query).then((items) {
+      if (items == null || items.isEmpty) return []
+      return Converter.toSpotubeMatchObject(rank(items, track["isrc"]))
+    })
+  }
+
+  /// hifi-api hands back a base64 manifest instead of a URL. The BTS variant
+  /// decodes to JSON holding a direct CDN link; the Hi-Res variant is a DASH
+  /// manifest an audio element cannot play, so it is skipped.
+  fun decodeManifest(payload) {
+    if (payload == null) return null
+    if (payload["manifestMimeType"] != "application/vnd.tidal.bts") return null
+
+    var raw = payload["manifest"]
+    if (raw == null || raw == "") return null
+
+    var manifest = JSON.decode(utf8.decode(Base64.decode(raw)))
+    var urls = manifest["urls"]
+    if (urls == null || urls.isEmpty) return null
+
+    return {
+      "url": urls[0],
+      "codec": manifest["codecs"] ?? "",
+    }
+  }
+
+  fun toStreamObject(decoded: Map, payload: Map) -> Map {
+    var codec = decoded["codec"] ?? ""
+    var lossless = codec.contains("flac")
+
+    return {
+      "url": decoded["url"],
+      "container": lossless ? "flac" : "mp4",
+      "type": lossless ? "lossless" : "lossy",
+      "codec": lossless ? "flac" : "aac",
+      "bitrate": lossless ? 1411000 : 320000,
+      "sampleRate": payload["sampleRate"] ?? 44100,
+      "bitDepth": payload["bitDepth"] ?? 16,
+    }.toJson()
+  }
+
+  /// Walks every endpoint/quality pair, collecting each distinct stream so
+  /// Spotube can honour the user's quality preference. A lower-tier account
+  /// returns the same URL for every quality, which is deduplicated here.
+  fun collect(endpointIndex: int, qualityIndex: int, id: String, found: List) -> Future {
+    if (endpointIndex >= ENDPOINTS.length) return Future.value(found)
+
+    if (qualityIndex >= QUALITIES.length) {
+      // Endpoint answered with at least one stream; no need to try the others.
+      if (found.isNotEmpty) return Future.value(found)
+      return collect(endpointIndex + 1, 0, id, found)
+    }
+
+    return client.get_req(
+      "${ENDPOINTS[endpointIndex]}/track/",
+      queryParameters: {
+        "id": id,
+        "quality": QUALITIES[qualityIndex],
+      }.toJson(),
+    ).then((res) {
+      if (res.statusCode == 200 && res.data != null && res.data["detail"] == null) {
+        var payload = res.data["data"]
+        var decoded = decodeManifest(payload)
+
+        if (decoded != null) {
+          var duplicate = false
+          for (var stream in found) {
+            if (stream["url"] == decoded["url"]) duplicate = true
+          }
+          if (!duplicate) found.add(toStreamObject(decoded, payload))
+        }
+      }
+
+      return collect(endpointIndex, qualityIndex + 1, id, found)
+    })
+  }
+
+  /// For the given match, return all available streams.
+  /// @param match - Map<SpotubeAudioSourceMatchObject>
+  /// @returns Future<List<SpotubeAudioSourceStreamObject>>
+  fun streams(match: Map) -> List {
+    if (match == null) return Future.value([])
+
+    var id = match["id"]
+    if (id == null || id == "") return Future.value([])
+
+    return collect(0, 0, id.toString(), [])
+  }
+}
+
+export { AudioSourceEndpoint, Converter }

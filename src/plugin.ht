@@ -1,0 +1,32 @@
+import "module:std" as std
+
+import { AudioSourceEndpoint } from './segments/audio_source.ht'
+import { CorePlugin } from './segments/core.ht'
+
+var HttpClient = std.HttpClient
+var HttpBaseOptions = std.HttpBaseOptions
+
+class HifiTidalAudioSourcePlugin {
+  var audioSource: AudioSourceEndpoint
+  var core: CorePlugin
+
+  var api: HttpClient
+
+  construct () {
+    // No baseUrl: every request passes an absolute URL so a single client can
+    // fail over between instances. The instances are free-tier and sleep when
+    // idle, so the first call after a quiet spell needs a generous timeout.
+    api = HttpClient(
+      HttpBaseOptions(
+        connectTimeout: 30000,
+        receiveTimeout: 30000,
+        followRedirects: true,
+      )
+    )
+
+    audioSource = AudioSourceEndpoint(api)
+    core = CorePlugin(api)
+  }
+}
+
+export { HifiTidalAudioSourcePlugin }
