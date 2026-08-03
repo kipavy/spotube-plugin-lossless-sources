@@ -35,9 +35,16 @@ Two details worth knowing, because they are not obvious from the API:
 
 Streams come back at whatever tier the instance's Tidal account allows. The
 bundled instances currently run on a lower tier and return **AAC 320** even when
-lossless is requested. The plugin advertises FLAC and lossy presets, and reports
-each stream's real codec and bitrate, so a Hi-Fi tier instance would expose FLAC
-without any change here.
+lossless is requested. The plugin reports each stream's real codec and bitrate,
+so a Hi-Fi tier instance would expose FLAC without any change here.
+
+> **If nothing plays, check your streaming format first.** Spotube picks a
+> container preset by index and then keeps only the streams whose container
+> matches it — with no fallback when nothing matches, so a mismatch fails
+> silently for every track. `mp4` is listed first here because that is what the
+> instances currently return. Only select the `flac` preset if your instance is
+> backed by a Hi-Fi tier account, otherwise there will be no matching stream.
+> Settings → Playback → streaming format/quality.
 
 ## When it breaks
 

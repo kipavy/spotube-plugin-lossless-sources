@@ -62,21 +62,27 @@ class AudioSourceEndpoint {
 
   construct (this.client)
 
+  /// Order matters. Spotube selects a preset by index, then keeps only the
+  /// streams whose container equals that preset's name and reduces over them,
+  /// which throws on an empty list rather than falling back. The container the
+  /// instances actually deliver therefore has to come first, so the default
+  /// selection resolves. flac stays available for an instance backed by a
+  /// Hi-Fi tier Tidal account.
   get supportedPresets -> List {
     return [
+      {
+        type: "lossy",
+        name: "mp4",
+        qualities: [
+          { bitrate: 320000 },
+        ],
+      }.toJson(),
       {
         type: "lossless",
         name: "flac",
         qualities: [
           { bitDepth: 24, sampleRate: 96000 },
           { bitDepth: 16, sampleRate: 44100 },
-        ],
-      }.toJson(),
-      {
-        type: "lossy",
-        name: "mp4",
-        qualities: [
-          { bitrate: 320000 },
         ],
       }.toJson(),
     ]
