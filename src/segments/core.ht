@@ -1,6 +1,9 @@
 import "module:std" as std
 
 var HttpClient = std.HttpClient
+// Required for the `.then` callback below to resolve, even though it is never
+// referenced by name. See the same declaration in audio_source.ht.
+var HttpResponse = std.HttpResponse
 var RequestOptions = std.RequestOptions
 
 class CorePlugin {

@@ -3,6 +3,10 @@ import "module:std" as std
 var Base64 = std.Base64
 var utf8 = std.utf8
 var HttpClient = std.HttpClient
+// Never referenced directly, but the runtime resolves the type of every
+// `.then` callback parameter in this scope. Without it: "Undefined identifier
+// [HttpResponse]" at the first request, at runtime only — it still compiles.
+var HttpResponse = std.HttpResponse
 var JSON = std.JSON
 
 /// Public hifi-api instances, tried in order. Each one proxies Tidal with its
