@@ -17,6 +17,10 @@ var JSON = std.JSON
 var FutureUtils = std.FutureUtils
 var Duration = std.Duration
 
+/// Characters kept when comparing artist names, so "Beyonce" and "Beyoncé"
+/// compare equal.
+var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
+
 /// Backoff before retrying an instance that answered 202. Its length also caps
 /// the number of retries, so a permanently busy host cannot stall playback:
 /// three tries, then the next instance.
@@ -142,12 +146,84 @@ class HifiApiSource {
     return ordered
   }
 
+  /// Lowercases and strips punctuation so names can be compared loosely.
+  fun simplify(value) -> String {
+    if (value == null) return ""
+    var lower = value.toString().toLowerCase()
+    var kept = ""
+    for (var index = 0; index < lower.length; index = index + 1) {
+      var character = lower.substring(index, index + 1)
+      if (KEEP.contains(character)) kept = kept + character
+    }
+    return kept.trim()
+  }
+
+  /// Every artist name a search result credits.
+  fun creditsOf(item: Map) -> List {
+    var names = []
+    if (item["artist"] != null && item["artist"]["name"] != null) {
+      names.add(simplify(item["artist"]["name"]))
+    }
+    if (item["artists"] != null) {
+      for (var artist in item["artists"]) {
+        var name = artist["name"]
+        if (name != null) names.add(simplify(name))
+      }
+    }
+    return names
+  }
+
+  /// Drops results that only share the title.
+  ///
+  /// The whole query goes to hifi-api as one string and it weighs the title,
+  /// not the artist, so asking for "Cars and Girls Cliff Richard" comes back
+  /// full of Prefab Sprout. An ISRC hit is exact and always survives; anything
+  /// else has to be credited to one of the track's artists, or it is somebody
+  /// else's recording that happens to share a name.
+  fun plausible(items: List, track: Map) -> List {
+    if (items == null || items.isEmpty) return []
+
+    var wanted = []
+    if (track["artists"] != null) {
+      for (var artist in track["artists"]) {
+        var name = artist == null ? null : artist["name"]
+        var simplified = simplify(name ?? artist)
+        if (simplified != "") wanted.add(simplified)
+      }
+    }
+    // Nothing to check against, so nothing can be ruled out.
+    if (wanted.isEmpty) return items
+
+    var isrc = track["isrc"]
+    var exact = isrc == null || isrc == "" ? "" : isrc.toUpperCase()
+
+    var kept = []
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (exact != "" && candidate != null && candidate.toUpperCase() == exact) {
+        kept.add(item)
+      } else {
+        var credits = creditsOf(item)
+        var shared = false
+        for (var credit in credits) {
+          for (var name in wanted) {
+            if (credit != "" && (credit.contains(name) || name.contains(credit))) {
+              shared = true
+            }
+          }
+        }
+        if (shared) kept.add(item)
+      }
+    }
+    return kept
+  }
+
   fun matches(track: Map, query: String, bases: List) -> Future {
     if (bases == null || bases.isEmpty) return Future.value([])
 
     return searchFrom(0, query, bases).then((items) {
       if (items == null || items.isEmpty) return []
-      return toMatchObjects(rank(items, track["isrc"]))
+      return toMatchObjects(rank(plausible(items, track), track["isrc"]))
     })
   }
 

@@ -7,6 +7,11 @@ var HttpResponse = std.HttpResponse
 /// "Don't Want You No More" and "dont want you no more.flac" compare equal.
 var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
 
+/// Leading track numbers to strip off a file name, and what may separate them
+/// from the title: "01. Cars And Girls", "03 - Nero The Zero".
+var DIGITS = "0123456789"
+var NUMBER_SEPARATORS = ". -_)"
+
 /// How many search results to open per strategy. Each one costs a metadata
 /// request, and scanning stops at the first item that holds the track.
 var MAX_ITEMS = 6
@@ -47,6 +52,53 @@ class ArchiveOrgSource {
       if (KEEP.contains(character)) kept = kept + character
     }
     return kept.trim()
+  }
+
+  /// The song part of a file path: the leaf, without its extension or its
+  /// track number.
+  ///
+  /// Uploads are commonly one folder per single, and archive.org often sets a
+  /// file's `title` to its whole path. Comparing that path meant every file
+  /// inside a folder named after the track looked like the track -- an upload
+  /// of "Cars And Girls [+]" matched Vendetta and Nero The Zero too -- and the
+  /// match that won carried a path as its title, which nothing can search for.
+  fun leaf(value) -> String {
+    if (value == null) return ""
+
+    var parts = value.toString().split("/")
+    var last = parts[parts.length - 1]
+
+    if (last.toLowerCase().endsWith(".flac")) {
+      last = last.substring(0, last.length - 5)
+    }
+
+    var digits = 0
+    var counting = true
+    for (var index = 0; index < last.length; index = index + 1) {
+      if (counting && DIGITS.contains(last.substring(index, index + 1))) {
+        digits = digits + 1
+      } else {
+        counting = false
+      }
+    }
+
+    // Only a number that something separates from the name is a track number,
+    // so a title that genuinely opens with a figure is left alone.
+    if (digits > 0 && digits < last.length) {
+      var cursor = digits
+      var skipping = true
+      for (var index = digits; index < last.length; index = index + 1) {
+        if (skipping &&
+            NUMBER_SEPARATORS.contains(last.substring(index, index + 1))) {
+          cursor = cursor + 1
+        } else {
+          skipping = false
+        }
+      }
+      if (cursor > digits) { last = last.substring(cursor) }
+    }
+
+    return last.trim()
   }
 
   /// Quotes are the only thing that can break the query syntax.
@@ -116,10 +168,11 @@ class ArchiveOrgSource {
         var name = file["name"] ?? ""
         if (!name.toLowerCase().endsWith(".flac")) continue
 
-        // The file's own title is cleaner than its name, which usually carries
-        // a track number and the show's date.
-        var label = file["title"] ?? name
-        if (wanted != "" && !simplify(label).contains(wanted) && !simplify(name).contains(wanted)) continue
+        // Both sides are reduced to the leaf first: a title set to the full
+        // path would otherwise carry the folder's name into every comparison.
+        var label = leaf(file["title"] ?? name)
+        var fallback = leaf(name)
+        if (wanted != "" && !simplify(label).contains(wanted) && !simplify(fallback).contains(wanted)) continue
 
         found.add({
           "id": "archive:${identifier}|${name}",

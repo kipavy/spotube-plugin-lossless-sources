@@ -97,6 +97,10 @@ class FakeHifi extends FakeServer {
   final bool hasCatalogue;
   final bool streamsBlocked;
 
+  /// Overrides the catalogue a search answers with, for the case where an
+  /// instance finds a different recording that happens to share the title.
+  final List<Map<String, dynamic>>? catalogue;
+
   final Map<String, int> trackCalls = {};
 
   FakeHifi({
@@ -104,6 +108,7 @@ class FakeHifi extends FakeServer {
     this.busyResponses = 0,
     this.hasCatalogue = true,
     this.streamsBlocked = false,
+    this.catalogue,
   });
 
   static String btsManifest() {
@@ -129,7 +134,8 @@ class FakeHifi extends FakeServer {
         'version': '2.10',
         'data': {
           'limit': 20,
-          'items': hasCatalogue
+          'items': catalogue ??
+              (hasCatalogue
               ? [
                   {
                     'id': 1550546,
@@ -146,7 +152,7 @@ class FakeHifi extends FakeServer {
                     },
                   },
                 ]
-              : [],
+              : []),
         },
       }));
       await request.response.close();
@@ -199,9 +205,18 @@ class FakeHifi extends FakeServer {
 /// `creator` as the uploader -- findable by free text only.
 class FakeArchive extends FakeServer {
   final bool answerCreatorSearch;
+
+  /// A real shape from archive.org: the upload is a folder named after its
+  /// lead single, every file's `title` is its full path, and the siblings are
+  /// entirely different songs.
+  final bool folderNamedAfterTrack;
+
   final List<String> queries = [];
 
-  FakeArchive({this.answerCreatorSearch = true});
+  FakeArchive({
+    this.answerCreatorSearch = true,
+    this.folderNamedAfterTrack = false,
+  });
 
   @override
   Future<void> handle(HttpRequest request) async {
@@ -213,11 +228,43 @@ class FakeArchive extends FakeServer {
       final docs = (isCreatorSearch && !answerCreatorSearch)
           ? []
           : [
-              {'identifier': 'gd1977-05-08'},
+              {
+                'identifier': folderNamedAfterTrack
+                    ? 'lionsinmyowngardena'
+                    : 'gd1977-05-08'
+              },
             ];
 
       request.response.write(jsonEncode({
         'response': {'numFound': docs.length, 'docs': docs},
+      }));
+      await request.response.close();
+      return;
+    }
+
+    if (request.uri.path == '/metadata/lionsinmyowngardena') {
+      request.response.write(jsonEncode({
+        'metadata': {
+          'title': 'Prefab Sprout Singles',
+          'creator': 'Prefab Sprout',
+        },
+        'files': [
+          {
+            'name': "1988 - 1 - Cars And Girls [+]/1. UK 7''/01. Cars And Girls.flac",
+            'title': "1988 - 1 - Cars And Girls [+]/1. UK 7''/01. Cars And Girls.flac",
+            'length': '266.0',
+          },
+          {
+            'name': "1988 - 1 - Cars And Girls [+]/1. UK 7''/02. Vendetta.flac",
+            'title': "1988 - 1 - Cars And Girls [+]/1. UK 7''/02. Vendetta.flac",
+            'length': '215.0',
+          },
+          {
+            'name': "1988 - 1 - Cars And Girls [+]/2. UK 12''/03. Nero The Zero.flac",
+            'title': "1988 - 1 - Cars And Girls [+]/2. UK 12''/03. Nero The Zero.flac",
+            'length': '240.0',
+          },
+        ],
       }));
       await request.response.close();
       return;
@@ -313,6 +360,15 @@ Future<void> main(List<String> args) async {
           'author': 'Daft Punk',
           'duration': 320000,
           'thumbnail': 'https://i.ytimg.com/vi/FGBhQbmPwH8/hq.jpg',
+        },
+      ],
+      'Cars and Girls Cliff Richard': [
+        {
+          'id': 'ytcarsgirls',
+          'title': 'Cliff Richard - Cars and Girls',
+          'author': 'Cliff Richard',
+          'duration': 240000,
+          'thumbnail': '',
         },
       ],
       // What a blocked hifi-api match tops up with: the same recording,
@@ -651,6 +707,37 @@ Future<void> main(List<String> args) async {
       youtube.queries.length - queriesBeforeFeat == 1,
       'queries=${youtube.queries.sublist(queriesBeforeFeat)}');
 
+  print('\na folder named after the track does not make every file the track');
+  // archive.org uploads are often one folder per single, with each file's
+  // title set to its full path. Matching the path meant every sibling in
+  // "Cars And Girls [+]" -- Vendetta, Nero The Zero -- looked like the track,
+  // and the winning match was titled with a path, which is unsearchable.
+  final singles = FakeArchive(folderNamedAfterTrack: true);
+  await singles.start();
+  storage.store.clear();
+  store.memberSet('cached',
+      await hetu.eval('[{"type": "archive", "base": "${singles.base}"}]'));
+
+  final carsAndGirls = await hetu.eval('''
+    { "name": "Cars and Girls", "isrc": "GBBBN8800007",
+      "artists": [{ "name": "Prefab Sprout" }] }
+  ''');
+  final singleMatches = await audioSource
+      .invoke('matches', positionalArgs: [carsAndGirls]) as List;
+  check('the siblings sharing the folder name were not matched',
+      singleMatches.length == 1, 'matches=$singleMatches');
+  check(
+      'the match is the file that really is the track',
+      singleMatches.isNotEmpty &&
+          singleMatches.first['id'].toString().endsWith(
+              "01. Cars And Girls.flac"),
+      'matches=$singleMatches');
+  check(
+      'the title is the track, not the path it sits at',
+      singleMatches.isNotEmpty &&
+          singleMatches.first['title'] == 'Cars And Girls',
+      'matches=$singleMatches');
+
   print('\na searchable instance that cannot stream still plays');
   // The state every public instance is in: the catalogue needs no account, so
   // searching answers perfectly and the router stops there, while /track/ is
@@ -684,6 +771,47 @@ Future<void> main(List<String> args) async {
       'what plays is a container the default preset can select',
       blockedStreams.map((s) => s['container']).toSet().contains('mp4'),
       'streams=$blockedStreams');
+
+  print('\na different artist with the same title is not this track');
+  // hifi-api searches the title and ignores the artist term: asking it for
+  // "Cars and Girls Cliff Richard" returns Prefab Sprout. rank() moved an
+  // ISRC-exact hit to the front but kept the rest, so a track whose ISRC is
+  // not in the results was answered with somebody else's song.
+  final wrongArtist = FakeHifi(catalogue: [
+    {
+      'id': 656737,
+      'title': 'Cars and Girls',
+      'duration': 265,
+      'isrc': 'GBBBN8800007',
+      'artist': {'name': 'Prefab Sprout'},
+      'artists': [
+        {'name': 'Prefab Sprout'}
+      ],
+      'album': {'title': 'From Langley Park To Memphis', 'cover': 'x'},
+    },
+  ]);
+  await wrongArtist.start();
+  storage.store.clear();
+  store.memberSet(
+      'cached',
+      await hetu.eval('[{"type": "hifi-api", "base": "${wrongArtist.base}"},'
+          '{"type": "youtube", "base": "https://youtube.com"}]'));
+
+  final otherArtist = await hetu.eval('''
+    { "name": "Cars and Girls", "isrc": "GBAAA0000001",
+      "artists": [{ "name": "Cliff Richard" }] }
+  ''');
+  final otherMatches = await audioSource
+      .invoke('matches', positionalArgs: [otherArtist]) as List;
+  check(
+      "somebody else's recording was not offered as the track",
+      otherMatches.every((m) => !m['id'].toString().startsWith('hifi-api:')),
+      'matches=$otherMatches');
+  check(
+      'the router fell through to a source that searches the artist too',
+      otherMatches.isNotEmpty &&
+          otherMatches.first['id'] == 'youtube:ytcarsgirls',
+      'matches=$otherMatches');
 
   print('\ncaching and fallbacks');
   // Fetch once for real so a cache exists to fall back to.
