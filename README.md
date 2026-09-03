@@ -89,6 +89,32 @@ To have a source considered, add it to `candidates` in `sources.json` or open
 an issue. `sources` and `status` are written by the probe; editing them by hand
 only lasts until the next run.
 
+## Using your own instance
+
+Every public hifi-api instance is blocked, and the projects still maintained
+publish none — they are built to be self-hosted. If you run your own
+([ez-hifi-api](https://github.com/itenai/ez-hifi-api),
+[tidal-workers](https://github.com/dev-x64/tidal-workers)), you can point a
+copy of this plugin at it without installing a toolchain, because CI builds
+the package for you:
+
+1. Fork this repository.
+2. Add your host to `candidates` in [`sources.json`](sources.json) — not to
+   `sources`. The hourly probe checks that it really streams and promotes it
+   itself, so a typo fails loudly instead of silently breaking playback.
+3. Point `REMOTE_URL` in [`src/segments/sources.ht`](src/segments/sources.ht)
+   at your fork's `sources.json`, so your copy reads your list rather than
+   this one.
+4. Push. The build workflow produces `plugin.smplug`; run it from the Actions
+   tab with a version to cut a release.
+5. In Spotube, install from your fork's repository URL.
+
+There is deliberately no settings field for this. Spotube's only way to show a
+plugin form is the `authentication` ability, which also puts a permanent
+"Plugin requires authentication" warning and a **Login** button on the plugin
+card — for a plugin whose whole point is that it asks you for nothing, that
+would be a lie on every install. Upstream issue pending.
+
 ## How it works
 
 | Step | Behaviour |
@@ -154,6 +180,15 @@ can be published before every installed plugin understands it.
 | `Upstream API error` | The instance's Tidal session is dead |
 | `Token refresh failed: 403` | Same, at the auth step |
 | Search works but playback fails | Catalogue reads are unauthenticated; `/track/` is not |
+
+A match that cannot produce a stream no longer costs you the track. The router
+still stops at the first source that has a match — a blocked instance answers
+the catalogue perfectly, so it usually wins — but a match that comes back with
+no streams, or with lossless alone while Spotube is asking for `mp4`, is backed
+by the same recording from YouTube. Spotube keeps only the streams whose
+container matches the selected preset and reduces over them, which throws on an
+empty list rather than falling back, so this is what stands between a blocked
+instance and silence.
 
 When every instance is down there is nothing to fix on this side — the probe
 will publish one as soon as it exists, and the Archive keeps answering
