@@ -42,9 +42,19 @@ is for.
 
 ## Install
 
-1. Download `plugin.smplug` from [Releases](https://github.com/kipavy/spotube-plugin-lossless-sources/releases)
-2. Spotube → Settings → Plugins → Install plugin
-3. Pick the downloaded file, then select **Lossless Sources** as your audio source
+**In Spotube, no download needed.** Settings → *Metadata provider plugins* →
+find **Lossless Sources** under *Available plugins* → install. Spotube lists
+every public repository tagged `spotube-plugin`, and this is one of them.
+
+Then pick it as your audio source.
+
+Two other ways, if you prefer:
+
+- **From a URL** — paste the `plugin.smplug` link from
+  [Releases](https://github.com/kipavy/spotube-plugin-lossless-sources/releases)
+  into the text field on that page and press the grey download button.
+- **From a file** — download `plugin.smplug` and use the orange upload button
+  beside the same field.
 
 > **If nothing plays at all, check your streaming format first.** Spotube picks
 > a container preset by index and then keeps only the streams whose container
