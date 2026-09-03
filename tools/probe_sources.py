@@ -28,12 +28,12 @@ PROBE_QUERY = "daft punk one more time"
 PROBE_ISRC = "GBDUW0000053"
 HIFI_QUALITIES = ("LOSSLESS", "HIGH")
 
-# The Archive has no studio releases, so it is probed with something actually
-# in it: a live recording collection that has been there for years.
+# Probed with a collection that has been there for years, so the check tests
+# the Archive rather than the fortunes of any one upload.
 ARCHIVE_QUERY = "collection:(etree) AND mediatype:(audio)"
 
 HEADERS = {
-    "User-Agent": "spotube-plugin-hifi-tidal source probe (+https://github.com/kipavy/spotube-plugin-hifi-tidal)",
+    "User-Agent": "spotube-plugin-lossless-sources source probe (+https://github.com/kipavy/spotube-plugin-lossless-sources)",
     "Accept": "application/json",
 }
 

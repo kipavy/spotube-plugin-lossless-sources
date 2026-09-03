@@ -1,15 +1,15 @@
 {
   "version": "1.1.0",
-  "name": "HiFi Tidal Audio",
+  "name": "Lossless Sources",
   "author": "kipavy",
-  "description": "Lossless audio source for Spotube. Routes each track to whichever public source can actually play it -- hifi-api instances for Tidal, the Internet Archive for live and public-domain recordings -- from a list kept current by an hourly probe. No accounts, no configuration.",
-  "entryPoint": "HifiTidalAudioSourcePlugin",
+  "description": "Lossless audio for Spotube from public sources that need no account. Routes each track to whichever source can actually play it -- hifi-api instances for Tidal, the Internet Archive for everything people have uploaded there -- from a list kept current by an hourly probe. No accounts, no configuration.",
+  "entryPoint": "LosslessSourcesPlugin",
   "apis": [
     "localstorage"
   ],
   "abilities": [
     "audio-source"
   ],
-  "repository": "https://github.com/kipavy/spotube-plugin-hifi-tidal",
+  "repository": "https://github.com/kipavy/spotube-plugin-lossless-sources",
   "pluginApiVersion": "2.0.0"
 }

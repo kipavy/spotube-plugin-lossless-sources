@@ -1,4 +1,4 @@
-# HiFi Tidal Audio — Spotube audio source plugin
+# Lossless Sources — Spotube audio source plugin
 
 An **audio source** for [Spotube](https://spotube.cc). Spotube gets your
 library, playlists and metadata from somewhere else (Spotify, MusicBrainz,
@@ -42,9 +42,9 @@ is for.
 
 ## Install
 
-1. Download `plugin.smplug` from [Releases](https://github.com/kipavy/spotube-plugin-hifi-tidal/releases)
+1. Download `plugin.smplug` from [Releases](https://github.com/kipavy/spotube-plugin-lossless-sources/releases)
 2. Spotube → Settings → Plugins → Install plugin
-3. Pick the downloaded file, then select **HiFi Tidal Audio** as your audio source
+3. Pick the downloaded file, then select **Lossless Sources** as your audio source
 
 > **If nothing plays at all, check your streaming format first.** Spotube picks
 > a container preset by index and then keeps only the streams whose container

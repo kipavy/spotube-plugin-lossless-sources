@@ -7,7 +7,7 @@ import { SourceStore } from './segments/sources.ht'
 var HttpClient = std.HttpClient
 var HttpBaseOptions = std.HttpBaseOptions
 
-class HifiTidalAudioSourcePlugin {
+class LosslessSourcesPlugin {
   var audioSource: AudioSourceEndpoint
   var core: CorePlugin
 
@@ -42,4 +42,4 @@ class HifiTidalAudioSourcePlugin {
   }
 }
 
-export { HifiTidalAudioSourcePlugin }
+export { LosslessSourcesPlugin }

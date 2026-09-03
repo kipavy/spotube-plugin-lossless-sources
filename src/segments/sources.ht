@@ -10,7 +10,7 @@ var JSON = std.JSON
 /// Source list maintained in the repository and refreshed by a scheduled
 /// probe, so a source that comes back reaches users within the hour instead of
 /// waiting for a release. Nothing here is configured by the user.
-var REMOTE_URL = "https://raw.githubusercontent.com/kipavy/spotube-plugin-hifi-tidal/main/sources.json"
+var REMOTE_URL = "https://raw.githubusercontent.com/kipavy/spotube-plugin-lossless-sources/main/sources.json"
 
 /// Last list that was fetched successfully. Only a cache: it keeps playback
 /// working when GitHub is unreachable, and is never edited by hand.

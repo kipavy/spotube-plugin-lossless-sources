@@ -27,7 +27,7 @@ class CorePlugin {
     var patch = int.parse(versionParts[2])
 
     return client.get_req(
-      "https://api.github.com/repos/kipavy/spotube-plugin-hifi-tidal/releases/latest",
+      "https://api.github.com/repos/kipavy/spotube-plugin-lossless-sources/releases/latest",
       options: RequestOptions(
         headers: {
           "Accept": "application/vnd.github.v3+json"
@@ -75,7 +75,7 @@ class CorePlugin {
   /// Returns the support information for the plugin in Markdown or plain text.
   get support -> string {
     return "
-# HiFi Tidal Audio
+# Lossless Sources
 
 Each track is routed to whichever public source can actually play it:
 
@@ -97,7 +97,7 @@ that an hourly probe keeps current, so a source that comes back reaches you
 within the hour without an update.
 
 Report a broken source, or suggest a working one, at
-[github.com/kipavy/spotube-plugin-hifi-tidal/issues](https://github.com/kipavy/spotube-plugin-hifi-tidal/issues).
+[github.com/kipavy/spotube-plugin-lossless-sources/issues](https://github.com/kipavy/spotube-plugin-lossless-sources/issues).
 
 ## Quality
 

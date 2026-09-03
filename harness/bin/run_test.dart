@@ -316,7 +316,7 @@ Future<void> main(List<String> args) async {
   );
 
   print('\nplugin constructs');
-  final plugin = hetu.invoke('HifiTidalAudioSourcePlugin');
+  final plugin = hetu.invoke('LosslessSourcesPlugin');
   check('entry point instantiates', plugin != null);
   check('no authentication segment is exposed', !pluginHasMember(plugin, 'auth'),
       'the plugin should need no configuration at all');

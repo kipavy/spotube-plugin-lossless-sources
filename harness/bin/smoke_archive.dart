@@ -58,7 +58,7 @@ Future<void> main() async {
     globallyImport: true,
   );
 
-  final plugin = hetu.invoke('HifiTidalAudioSourcePlugin');
+  final plugin = hetu.invoke('LosslessSourcesPlugin');
   final audioSource = plugin.memberGet('audioSource');
   plugin.memberGet('sources').memberSet('cached',
       await hetu.eval('[{"type": "archive", "base": "https://archive.org"}]'));
