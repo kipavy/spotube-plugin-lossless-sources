@@ -1,4 +1,4 @@
-.PHONY: all check compile archive verify
+.PHONY: all check compile test archive verify
 
 # Bare `make` builds the first target, so it must do the real work.
 all: check compile
@@ -8,6 +8,12 @@ check:
 
 compile:
 	hetu compile src/plugin.ht build/plugin.out
+
+# Runs the compiled bytecode against fake sources. Catches what compiling
+# cannot: undefined identifiers, binding type mismatches, routing, failover
+# and the 202 retry. Needs build/plugin.out, so compile first.
+test:
+	harness/setup.sh && cd harness && dart pub get && dart run bin/run_test.dart
 
 # Chained with && so a missing plugin.out fails the build instead of quietly
 # packaging an archive without any bytecode in it.

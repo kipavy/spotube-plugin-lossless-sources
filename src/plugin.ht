@@ -2,6 +2,7 @@ import "module:std" as std
 
 import { AudioSourceEndpoint } from './segments/audio_source.ht'
 import { CorePlugin } from './segments/core.ht'
+import { SourceStore } from './segments/sources.ht'
 
 var HttpClient = std.HttpClient
 var HttpBaseOptions = std.HttpBaseOptions
@@ -11,20 +12,32 @@ class HifiTidalAudioSourcePlugin {
   var core: CorePlugin
 
   var api: HttpClient
+  var sources: SourceStore
 
   construct () {
     // No baseUrl: every request passes an absolute URL so a single client can
-    // fail over between instances. The instances are free-tier and sleep when
+    // fail over between hosts. Public instances are free-tier and sleep when
     // idle, so the first call after a quiet spell needs a generous timeout.
     api = HttpClient(
       HttpBaseOptions(
         connectTimeout: 30000,
         receiveTimeout: 30000,
         followRedirects: true,
+        // Without this, the client throws on any non-2xx instead of returning
+        // it, so every `res.statusCode != 200` failover below is unreachable:
+        // one blocked instance answering 403 or 503 aborts the whole lookup
+        // rather than falling through to the next one.
+        validateStatus: (status) {
+          return true
+        },
       )
     )
 
-    audioSource = AudioSourceEndpoint(api)
+    // The store fetches the published source list with the same client, so
+    // there is nothing for the user to configure and nothing to log into.
+    sources = SourceStore(api)
+
+    audioSource = AudioSourceEndpoint(api, sources)
     core = CorePlugin(api)
   }
 }

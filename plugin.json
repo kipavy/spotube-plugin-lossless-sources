@@ -1,11 +1,15 @@
 {
-  "version": "1.0.4",
+  "version": "1.1.0",
   "name": "HiFi Tidal Audio",
   "author": "kipavy",
-  "description": "Tidal audio source for Spotube, served through public hifi-api instances with ISRC-accurate matching and automatic endpoint failover.",
+  "description": "Lossless audio source for Spotube. Routes each track to whichever public source can actually play it -- hifi-api instances for Tidal, the Internet Archive for live and public-domain recordings -- from a list kept current by an hourly probe. No accounts, no configuration.",
   "entryPoint": "HifiTidalAudioSourcePlugin",
-  "apis": ["localstorage"],
-  "abilities": ["audio-source"],
+  "apis": [
+    "localstorage"
+  ],
+  "abilities": [
+    "audio-source"
+  ],
   "repository": "https://github.com/kipavy/spotube-plugin-hifi-tidal",
   "pluginApiVersion": "2.0.0"
 }

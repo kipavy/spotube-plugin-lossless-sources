@@ -1,0 +1,115 @@
+{
+  "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
+  "updated": "2026-09-03T17:49:21Z",
+  "sources": [
+    {
+      "type": "archive",
+      "base": "https://archive.org"
+    }
+  ],
+  "candidates": [
+    {
+      "type": "hifi-api",
+      "base": "https://hifi-api-w9y8.onrender.com"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://hifi-api-bffw.onrender.com"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://api.monochrome.tf"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://monochrome-api.samidy.com"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://tidal.kinoplus.online"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://wolf.qqdl.site"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://maus.qqdl.site"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://vogel.qqdl.site"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://katze.qqdl.site"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://hund.qqdl.site"
+    },
+    {
+      "type": "archive",
+      "base": "https://archive.org"
+    }
+  ],
+  "status": {
+    "hifi-api https://hifi-api-w9y8.onrender.com": {
+      "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://hifi-api-bffw.onrender.com": {
+      "search": "ok",
+      "stream": "403 Upstream API error",
+      "playable": false
+    },
+    "hifi-api https://api.monochrome.tf": {
+      "search": "503 <!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"U",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://monochrome-api.samidy.com": {
+      "search": "ok",
+      "stream": "403 Upstream API error",
+      "playable": false
+    },
+    "hifi-api https://tidal.kinoplus.online": {
+      "search": "-1 URLError: <urlopen error [Errno -5] No address associated wi",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://wolf.qqdl.site": {
+      "search": "-1 TimeoutError: The read operation timed out",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://maus.qqdl.site": {
+      "search": "-1 TimeoutError: The read operation timed out",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://vogel.qqdl.site": {
+      "search": "500 <html>\r\n<head><title>500 Internal Server Error</title></head",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://katze.qqdl.site": {
+      "search": "500 <html>\r\n<head><title>500 Internal Server Error</title></head",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://hund.qqdl.site": {
+      "search": "500 <html>\r\n<head><title>500 Internal Server Error</title></head",
+      "stream": null,
+      "playable": false
+    },
+    "archive https://archive.org": {
+      "search": "ok",
+      "stream": "ok flac (otherbrothers2026-05-25)",
+      "playable": true
+    }
+  },
+  "playable_count": 1,
+  "announced_recovery": false
+}

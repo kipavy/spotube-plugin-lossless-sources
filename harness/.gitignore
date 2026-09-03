@@ -1,0 +1,3 @@
+.deps/
+.dart_tool/
+pubspec.lock

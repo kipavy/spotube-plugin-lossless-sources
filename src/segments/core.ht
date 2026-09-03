@@ -77,17 +77,25 @@ class CorePlugin {
     return "
 # HiFi Tidal Audio
 
-Audio is served by public [hifi-api](https://github.com/uimaxbai/hifi-api)
-instances that proxy Tidal using their own account. Nothing here is hosted by
-this plugin, so playback depends on those instances staying alive.
+Each track is routed to whichever public source can actually play it:
+
+- **hifi-api instances** — Tidal, the full mainstream catalogue, matched by
+  ISRC so remasters and live versions are not confused with each other.
+- **the Internet Archive** — live recordings and public-domain material, no
+  account and nothing to block, but it holds no studio releases.
 
 ## If playback stops working
 
-Every instance returning `Upstream API error` or `Token refresh failed` means
-its Tidal account has been blocked. That is not fixable from the plugin — a new
-instance has to be added.
+Instances proxy Tidal with their own account, and an instance answering
+`Upstream API error` or `Token refresh failed` has had that account blocked.
+As of September 2026 every public one is in that state, so mainstream tracks
+will not play; Archive material still does.
 
-Report a broken instance, or suggest a working one, at
+There is nothing to configure. The source list is a file in the repository
+that an hourly probe keeps current, so a source that comes back reaches you
+within the hour without an update.
+
+Report a broken source, or suggest a working one, at
 [github.com/kipavy/spotube-plugin-hifi-tidal/issues](https://github.com/kipavy/spotube-plugin-hifi-tidal/issues).
 
 ## Quality

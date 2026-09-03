@@ -1,0 +1,219 @@
+import "module:std" as std
+
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+
+/// Characters kept when comparing titles. Anything else is dropped, so
+/// "Don't Want You No More" and "dont want you no more.flac" compare equal.
+var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
+
+/// How many search results to open. Each one costs a metadata request, and
+/// scanning stops at the first item that holds the track.
+var MAX_ITEMS = 5
+
+/// The Internet Archive, which needs no account, no key and no instance.
+///
+/// It will never match most of a Spotify library: what is here is live
+/// recordings and public-domain material, not studio releases. It earns its
+/// place by being the one source that cannot be blocked -- when every proxy is
+/// down, this still answers, and the FLAC it serves is a direct file URL.
+class ArchiveOrgSource {
+  var client: HttpClient
+
+  get id -> String => "archive"
+
+  get supportedPresets -> List {
+    return [
+      {
+        type: "lossless",
+        name: "flac",
+        qualities: [
+          { bitDepth: 16, sampleRate: 44100 },
+        ],
+      }.toJson(),
+    ]
+  }
+
+  construct (this.client)
+
+  /// Lowercases and strips punctuation so titles can be compared loosely.
+  fun simplify(value) -> String {
+    if (value == null) return ""
+    var lower = value.toString().toLowerCase()
+    var kept = ""
+    for (var index = 0; index < lower.length; index = index + 1) {
+      var character = lower.substring(index, index + 1)
+      if (KEEP.contains(character)) kept = kept + character
+    }
+    return kept.trim()
+  }
+
+  /// Quotes are the only thing that can break the query syntax.
+  fun escape(value) -> String {
+    if (value == null) return ""
+    return value.toString().replaceAll("\"", "")
+  }
+
+  /// Searches by performer, never by track title.
+  ///
+  /// The Archive indexes items -- whole concerts -- so a title search looks
+  /// for a show called "Scarlet Begonias" and finds nothing. Individual songs
+  /// exist only inside an item's file list, which is why the match is made by
+  /// opening the most-downloaded shows and reading their files.
+  fun searchQuery(track: Map) -> String {
+    var artist = ""
+    if (track["artists"] != null && track["artists"].isNotEmpty) {
+      var first = track["artists"][0]
+      // Not `is Map`: a Hetu struct is not a Map, and the failed test would
+      // put the whole object into the query.
+      var name = first == null ? null : first["name"]
+      artist = escape(name ?? first)
+    }
+
+    if (artist != "") {
+      return "creator:(\"${artist}\") AND mediatype:(audio) AND format:(Flac)"
+    }
+
+    // Without an artist there is nothing better than the item title, which at
+    // least matches compilations and single-work uploads.
+    var name = escape(track["name"] ?? "")
+    return "title:(\"${name}\") AND mediatype:(audio) AND format:(Flac)"
+  }
+
+  /// Walks the search hits one item at a time, opening each item's file list
+  /// until a FLAC whose title matches the track turns up.
+  fun inspect(index: int, identifiers: List, track: Map, base: String) -> Future {
+    if (index >= identifiers.length || index >= MAX_ITEMS) return Future.value([])
+
+    var identifier = identifiers[index]
+
+    return client.get_req("${base}/metadata/${identifier}").then((res) {
+      if (res.statusCode != 200 || res.data == null) {
+        return inspect(index + 1, identifiers, track, base)
+      }
+
+      var files = res.data["files"]
+      if (files == null || files.isEmpty) {
+        return inspect(index + 1, identifiers, track, base)
+      }
+
+      var wanted = simplify(track["name"] ?? "")
+      var metadata = res.data["metadata"] ?? {}
+      var creator = metadata["creator"] ?? ""
+      var found = []
+
+      for (var file in files) {
+        var name = file["name"] ?? ""
+        if (!name.toLowerCase().endsWith(".flac")) continue
+
+        // The file's own title is cleaner than its name, which usually carries
+        // a track number and the show's date.
+        var label = file["title"] ?? name
+        if (wanted != "" && !simplify(label).contains(wanted) && !simplify(name).contains(wanted)) continue
+
+        found.add({
+          "id": "archive:${identifier}|${name}",
+          "title": label,
+          "artists": [creator == "" ? "Internet Archive" : creator],
+          "duration": toMilliseconds(file["length"]),
+          "thumbnail": "${base}/services/img/${identifier}",
+          "externalUri": "${base}/details/${identifier}",
+          "isrc": "",
+          "album": metadata["title"] ?? "",
+        }.toJson())
+      }
+
+      if (found.isEmpty) return inspect(index + 1, identifiers, track, base)
+      return found
+    })
+  }
+
+  /// Archive lengths come as either seconds ("312.5") or "mm:ss".
+  fun toMilliseconds(length) -> int {
+    if (length == null) return 0
+    var text = length.toString()
+    if (text == "") return 0
+
+    if (text.contains(":")) {
+      var parts = text.split(":")
+      var minutes = readNumber(parts[0])
+      var seconds = parts.length > 1 ? readNumber(parts[1]) : 0
+      return (minutes * 60 + seconds) * 1000
+    }
+
+    return readNumber(text) * 1000
+  }
+
+  /// int.parse throws on anything unexpected and Hetu has no try/catch, so the
+  /// digits are checked first and the fractional part dropped.
+  fun readNumber(text) -> int {
+    if (text == null) return 0
+    var whole = text.toString().trim()
+    if (whole.contains(".")) whole = whole.split(".")[0]
+    if (whole == "") return 0
+
+    for (var index = 0; index < whole.length; index = index + 1) {
+      if (!"0123456789".contains(whole.substring(index, index + 1))) return 0
+    }
+    return int.parse(whole)
+  }
+
+  fun matches(track: Map, query: String, bases: List) -> Future {
+    if (bases == null || bases.isEmpty) return Future.value([])
+    if (track == null) return Future.value([])
+
+    var base = bases[0]
+
+    return client.get_req(
+      "${base}/advancedsearch.php",
+      queryParameters: {
+        "q": searchQuery(track),
+        "fl[]": "identifier",
+        // Most-downloaded first: a famous song is likeliest to appear in the
+        // shows people actually listen to.
+        "sort[]": "downloads desc",
+        "rows": MAX_ITEMS,
+        "output": "json",
+      }.toJson(),
+    ).then((res) {
+      if (res.statusCode != 200 || res.data == null) return []
+
+      var response = res.data["response"]
+      if (response == null) return []
+
+      var docs = response["docs"]
+      if (docs == null || docs.isEmpty) return []
+
+      var identifiers = []
+      for (var doc in docs) {
+        if (doc["identifier"] != null) identifiers.add(doc["identifier"])
+      }
+
+      return inspect(0, identifiers, track, base)
+    })
+  }
+
+  fun streams(match: Map, reference: String, bases: List) -> Future {
+    if (bases == null || bases.isEmpty) return Future.value([])
+    if (reference == null || !reference.contains("|")) return Future.value([])
+
+    var parts = reference.split("|")
+    var identifier = parts[0]
+    var file = parts[1].replaceAll(" ", "%20")
+
+    // A direct file URL, so there is nothing to resolve and nothing to expire.
+    return Future.value([
+      {
+        "url": "${bases[0]}/download/${identifier}/${file}",
+        "container": "flac",
+        "type": "lossless",
+        "codec": "flac",
+        "bitrate": 1411000,
+        "sampleRate": 44100,
+        "bitDepth": 16,
+      }.toJson(),
+    ])
+  }
+}
+
+export { ArchiveOrgSource }

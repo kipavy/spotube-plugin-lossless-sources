@@ -1,0 +1,228 @@
+import "module:std" as std
+import "module:spotube_plugin" as spotube
+
+var LocalStorage = spotube.LocalStorage
+var DateTime = std.DateTime
+var HttpClient = std.HttpClient
+var HttpResponse = std.HttpResponse
+var JSON = std.JSON
+
+/// Source list maintained in the repository and refreshed by a scheduled
+/// probe, so a source that comes back reaches users within the hour instead of
+/// waiting for a release. Nothing here is configured by the user.
+var REMOTE_URL = "https://raw.githubusercontent.com/kipavy/spotube-plugin-hifi-tidal/main/sources.json"
+
+/// Last list that was fetched successfully. Only a cache: it keeps playback
+/// working when GitHub is unreachable, and is never edited by hand.
+var CACHE_KEY = "sources-cache"
+
+/// How long a cached list is trusted before the published one is fetched
+/// again. Six hours: the probe runs hourly, and a user who opens Spotube twice
+/// in an evening should not pay for a fetch twice.
+var CACHE_TTL_MS = 21600000
+
+/// Cache is `<millisecondsSinceEpoch>|<type>=<base>,<type>=<base>`.
+///
+/// Not setStringList: a Hetu list arrives at the binding as List<dynamic>,
+/// and LocalStorage.setStringList takes a List<String>, so it throws
+/// "type 'List<dynamic>' is not a subtype of type 'List<String>'" at runtime
+/// only. One string sidesteps the generic entirely.
+var ENTRY_SEPARATOR = ","
+var FIELD_SEPARATOR = "="
+var STAMP_SEPARATOR = "|"
+
+/// Used to check a timestamp before parsing it: `int.tryParse` does not exist
+/// in this runtime, and a bad `int.parse` throws where nothing can catch it.
+var DIGITS = "0123456789"
+
+/// Shipped so a fresh install can play before the first fetch returns, and so
+/// an offline install still has something to try.
+///
+/// The hifi-api instances proxy Tidal with their own accounts and get blocked,
+/// which is exactly why the live list lives in the repository. The Archive
+/// needs no account at all, so it belongs in the binary: it is what remains
+/// when every proxy is down.
+var DEFAULT_SOURCES = [
+  { "type": "hifi-api", "base": "https://hifi-api-w9y8.onrender.com" },
+  { "type": "hifi-api", "base": "https://hifi-api-bffw.onrender.com" },
+  { "type": "archive", "base": "https://archive.org" },
+]
+
+/// Resolves which sources to try, newest information first: the published
+/// list, then the last one that was fetched, then the bundled defaults.
+class SourceStore {
+  var client: HttpClient
+
+  /// Resolved list, cached for the session. Without it every search would
+  /// re-fetch the published list.
+  var cached: List
+
+  /// The list URL is a constructor argument only so the test harness can
+  /// point it at a local server; it defaults to the published one and nothing
+  /// in the app ever passes it.
+  var remoteUrl: String
+
+  construct (this.client, [this.remoteUrl])
+
+  /// Trims trailing slashes and whitespace so "https://host/" and
+  /// "https://host" are not tried as two separate hosts.
+  fun normalize(value) -> String {
+    if (value == null) return ""
+    var url = value.toString().trim()
+    while (url.endsWith("/")) {
+      url = url.substring(0, url.length - 1)
+    }
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return ""
+    return url
+  }
+
+  fun entry(type, base) -> Map {
+    return { "type": type.toString().trim(), "base": normalize(base) }
+  }
+
+  /// Published entries first, bundled defaults after, deduplicated on
+  /// type+base. The defaults stay at the end so an empty or broken list still
+  /// behaves like a plain install rather than leaving nothing to try.
+  fun merge(entries) -> List {
+    var merged = []
+    var seen = []
+
+    fun add(candidate) {
+      if (candidate["type"] == "" || candidate["base"] == "") return
+      var key = "${candidate["type"]}${FIELD_SEPARATOR}${candidate["base"]}"
+      if (seen.contains(key)) return
+      seen.add(key)
+      merged.add(candidate)
+    }
+
+    if (entries != null) {
+      for (var item in entries) {
+        if (item["type"] == null || item["base"] == null) continue
+        add(entry(item["type"], item["base"]))
+      }
+    }
+
+    for (var item in DEFAULT_SOURCES) {
+      add(entry(item["type"], item["base"]))
+    }
+
+    return merged
+  }
+
+  /// Reads sources.json from the repository. Returns null on anything
+  /// unexpected -- a failed fetch must fall back, never throw, or one GitHub
+  /// hiccup would stop playback entirely.
+  fun fetchRemote() -> Future {
+    // raw.githubusercontent serves .json as `text/plain; charset=utf-8`, so
+    // the body always arrives as an undecoded string. It cannot be branched on
+    // instead: `String`/`string` only resolve in type annotations, Hetu has no
+    // try/catch, and RequestOptions.responseType takes a Dart enum a script
+    // cannot construct.
+    return client.get_req(remoteUrl ?? REMOTE_URL).then((res) {
+      if (res.statusCode != 200 || res.data == null) return null
+
+      var payload = JSON.decode(res.data)
+      if (payload == null) return null
+
+      var sources = payload["sources"]
+      if (sources == null || sources.isEmpty) return null
+      return sources
+    })
+  }
+
+  /// Parses the cache timestamp, treating anything unexpected as "ancient" so
+  /// the list is refetched rather than trusted.
+  fun readStamp(text) -> int {
+    if (text == null || text == "") return 0
+    for (var index = 0; index < text.length; index = index + 1) {
+      if (!DIGITS.contains(text.substring(index, index + 1))) return 0
+    }
+    return int.parse(text)
+  }
+
+  fun parseEntries(text) -> List {
+    if (text == null || text == "") return []
+    var parsed = []
+    for (var part in text.split(ENTRY_SEPARATOR)) {
+      var fields = part.split(FIELD_SEPARATOR)
+      if (fields.length < 2) continue
+      parsed.add(entry(fields[0], fields[1]))
+    }
+    return parsed
+  }
+
+  /// Returns the cached sources along with whether they are recent enough to
+  /// skip the fetch.
+  fun readCache() -> Future {
+    return LocalStorage.getString(CACHE_KEY).then((saved) {
+      if (saved == null || saved == "") {
+        return { "sources": [], "fresh": false }
+      }
+
+      var parts = saved.split(STAMP_SEPARATOR)
+      if (parts.length < 2) {
+        return { "sources": [], "fresh": false }
+      }
+
+      var age = DateTime.now().millisecondsSinceEpoch - readStamp(parts[0])
+
+      return {
+        "sources": parseEntries(parts[1]),
+        "fresh": age >= 0 && age < CACHE_TTL_MS,
+      }
+    })
+  }
+
+  fun writeCache(sources: List) -> Future {
+    var encoded = []
+    for (var item in sources) {
+      encoded.add("${item["type"]}${FIELD_SEPARATOR}${item["base"]}")
+    }
+    var stamped = "${DateTime.now().millisecondsSinceEpoch}${STAMP_SEPARATOR}${encoded.join(ENTRY_SEPARATOR)}"
+    return LocalStorage.setString(CACHE_KEY, stamped)
+  }
+
+  /// The sources playback should try, in order.
+  ///
+  /// A fresh cache is used without touching the network at all. That is not
+  /// only about speed: a connection error inside the fetch cannot be caught
+  /// here -- Hetu has no try/catch and the Future binding exposes only `then`
+  /// -- so it would surface as a failed lookup. Going to the network only when
+  /// there is nothing recent to use keeps an offline start playing from the
+  /// last known list instead of failing outright.
+  fun resolve() -> Future {
+    if (cached != null) return Future.value(cached)
+
+    return readCache().then((entry) {
+      if (entry["fresh"] && entry["sources"].isNotEmpty) {
+        cached = merge(entry["sources"])
+        return cached
+      }
+
+      return fetchRemote().then((remote) {
+        if (remote != null) {
+          cached = merge(remote)
+          return writeCache(cached).then((value) {
+            return cached
+          })
+        }
+
+        cached = merge(entry["sources"])
+        return cached
+      })
+    })
+  }
+
+  /// Bases for one source type, in published order.
+  fun basesFor(type: String) -> Future {
+    return resolve().then((sources) {
+      var bases = []
+      for (var item in sources) {
+        if (item["type"] == type) bases.add(item["base"])
+      }
+      return bases
+    })
+  }
+}
+
+export { SourceStore, DEFAULT_SOURCES, REMOTE_URL, CACHE_KEY }

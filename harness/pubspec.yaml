@@ -1,0 +1,14 @@
+name: plugin_harness
+description: Runs the compiled plugin against fake sources.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  hetu_script: ^0.4.2+1
+  hetu_std:
+    path: .deps/hetu_std
+  dio: ^5.8.0+1
+  path: ^1.9.1

@@ -1,0 +1,91 @@
+name: Probe Sources
+
+# Public proxies proxy a streaming service with their own account, and those
+# accounts get blocked without warning. Probing hourly means a source that
+# comes back reaches users through sources.json within the hour, with no
+# release and nothing for them to configure.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: probe-sources
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Probe candidates
+        run: python3 tools/probe_sources.py
+
+      - name: Commit the published list
+        id: commit
+        run: |
+          if git diff --quiet -- sources.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "nothing changed"
+            exit 0
+          fi
+
+          # Only the timestamp moving is not worth a commit; it would push an
+          # empty change every hour forever.
+          if [ -z "$(git diff -U0 -- sources.json | grep -E '^\+' | grep -v '^\+\+\+' | grep -v '"updated"')" ]; then
+            git checkout -- sources.json
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "only the timestamp moved"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sources.json
+          git commit -m "Update source list from the hourly probe"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Announce a recovery
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+
+          document = json.loads(pathlib.Path("sources.json").read_text())
+          sources = document.get("sources") or []
+
+          # Nothing to say while everything is down, and nothing to repeat once
+          # the recovery has already been announced.
+          if not sources or document.get("announced_recovery"):
+              raise SystemExit(0)
+
+          listed = "\n".join(f"- `{s['type']}` {s['base']}" for s in sources)
+          body = (
+              "The hourly probe found a working source again:\n\n"
+              f"{listed}\n\n"
+              "These served a real decodable stream, not just search results. "
+              "Installed plugins pick the list up from `sources.json` on the "
+              "next start -- no update needed.\n\n"
+              "Reopen this issue if playback is still failing for you."
+          )
+
+          subprocess.run(["gh", "issue", "comment", "1", "--body", body], check=False)
+
+          document["announced_recovery"] = True
+          pathlib.Path("sources.json").write_text(json.dumps(document, indent=2) + "\n")
+
+          subprocess.run(["git", "add", "sources.json"], check=True)
+          subprocess.run(["git", "commit", "-m", "Mark the recovery as announced"], check=True)
+          subprocess.run(["git", "push"], check=True)
+          PY

@@ -1,81 +1,54 @@
 import "module:std" as std
 
-// Every std type touched at runtime must be resolvable here, including the
-// *class* behind an instance: calling utf8.decode() needs Utf8Codec in scope,
-// not just utf8. None of this is caught at compile time.
-var Base64 = std.Base64
-var Utf8Codec = std.Utf8Codec
-var utf8 = std.utf8
+import { SourceStore } from './sources.ht'
+import { HifiApiSource } from '../sources/hifi_api.ht'
+import { ArchiveOrgSource } from '../sources/archive_org.ht'
+
 var HttpClient = std.HttpClient
 // Never referenced directly, but the runtime resolves the type of every
-// `.then` callback parameter in this scope. Without it: "Undefined identifier
-// [HttpResponse]" at the first request, at runtime only — it still compiles.
+// `.then` callback parameter in this scope.
 var HttpResponse = std.HttpResponse
-var JSON = std.JSON
 
-/// Public hifi-api instances, tried in order. Each one proxies Tidal with its
-/// own account, so a dead account only costs us a fallback to the next host.
-var ENDPOINTS = [
-  "https://hifi-api-w9y8.onrender.com",
-  "https://hifi-api-bffw.onrender.com",
-]
+/// Match ids are `<source id>:<reference>`, so a match can be handed back to
+/// the source that produced it when Spotube asks for its streams.
+var ID_SEPARATOR = ":"
 
-/// Requested in order. An instance backed by a lower Tidal tier silently
-/// answers with the best it has, so asking for Hi-Res first costs nothing.
-var QUALITIES = ["HI_RES_LOSSLESS", "LOSSLESS", "HIGH"]
+/// Ids written before the plugin had more than one source. Spotube keeps
+/// matches it has already resolved, so those still arrive here.
+var LEGACY_SOURCE = "hifi-api"
 
-/// Tidal cover fields are bare UUIDs rather than URLs.
-fun coverUrl(cover) {
-  if (cover == null || cover == "") return ""
-  var path = cover.replaceAll("-", "/")
-  return "https://resources.tidal.com/images/${path}/320x320.jpg"
-}
-
-class Converter {
-  /// Maps a hifi-api search item to a SpotubeAudioSourceMatchObject.
-  static fun toSpotubeMatchObject(items: List) -> List {
-    if (items == null || items.isEmpty) return []
-    return items.map((item) {
-      var names = []
-      if (item["artist"] != null && item["artist"]["name"] != null) {
-        names.add(item["artist"]["name"])
-      }
-      if (item["artists"] != null) {
-        for (var artist in item["artists"]) {
-          var name = artist["name"]
-          if (name != null && !names.contains(name)) names.add(name)
-        }
-      }
-      if (names.isEmpty) names.add("Unknown")
-
-      var album = item["album"]
-      var cover = album != null ? album["cover"] : null
-
-      return {
-        "id": item["id"].toString(),
-        "title": item["title"] ?? "",
-        "artists": names,
-        "duration": (item["duration"] ?? 0) * 1000,
-        "thumbnail": coverUrl(cover),
-        "externalUri": "https://tidal.com/browse/track/${item["id"]}",
-        "isrc": item["isrc"] ?? "",
-        "album": album != null ? (album["title"] ?? "") : "",
-      }.toJson()
-    }).toList()
-  }
-}
-
+/// Routes a track to whichever source can actually play it.
+///
+/// Sources are tried in the order the published list gives them and the first
+/// one with a match wins, so the list is also the preference order: proxies
+/// that carry the mainstream catalogue first, the Archive last as the one that
+/// cannot be blocked.
 class AudioSourceEndpoint {
   var client: HttpClient
+  var store: SourceStore
 
-  construct (this.client)
+  var hifiApi: HifiApiSource
+  var archive: ArchiveOrgSource
 
+  construct (this.client, this.store) {
+    hifiApi = HifiApiSource(client)
+    archive = ArchiveOrgSource(client)
+  }
+
+  fun sourceFor(type) {
+    if (type == "hifi-api") return hifiApi
+    if (type == "archive") return archive
+    // An unknown type in the published list is skipped rather than fatal, so
+    // a new source can be listed before every installed plugin understands it.
+    return null
+  }
+
+  /// Every container any source can deliver.
+  ///
   /// Order matters. Spotube selects a preset by index, then keeps only the
   /// streams whose container equals that preset's name and reduces over them,
-  /// which throws on an empty list rather than falling back. The container the
-  /// instances actually deliver therefore has to come first, so the default
-  /// selection resolves. flac stays available for an instance backed by a
-  /// Hi-Fi tier Tidal account.
+  /// which throws on an empty list rather than falling back. mp4 stays first
+  /// because that is what the hifi-api instances actually return.
   get supportedPresets -> List {
     return [
       {
@@ -96,46 +69,61 @@ class AudioSourceEndpoint {
     ]
   }
 
-  /// Searches one endpoint, falling through to the next when a host is asleep,
-  /// blocked, or returns nothing useful.
-  fun searchFrom(index: int, query: String) -> Future {
-    if (index >= ENDPOINTS.length) return Future.value([])
-
-    return client.get_req(
-      "${ENDPOINTS[index]}/search/",
-      queryParameters: { "s": query, "limit": 20 }.toJson(),
-    ).then((res) {
-      if (res.statusCode != 200 || res.data == null) {
-        return searchFrom(index + 1, query)
+  /// Collapses the flat source list into one group per type, keeping the
+  /// order the list gave: [{ type, bases: [...] }].
+  fun grouped(sources: List) -> List {
+    var groups = []
+    for (var item in sources) {
+      var existing = null
+      for (var group in groups) {
+        if (group["type"] == item["type"]) existing = group
       }
-      var payload = res.data["data"]
-      if (payload == null) return searchFrom(index + 1, query)
-
-      var items = payload["items"]
-      if (items == null || items.isEmpty) return searchFrom(index + 1, query)
-
-      return items
-    })
+      if (existing == null) {
+        groups.add({ "type": item["type"], "bases": [item["base"]] })
+      } else {
+        existing["bases"].add(item["base"])
+      }
+    }
+    return groups
   }
 
-  /// Ranks an exact ISRC hit first. Spotube hands us the ISRC from the metadata
-  /// provider, and hifi-api returns it per result, so when both are present the
-  /// match is exact rather than guessed from the title.
-  fun rank(items: List, isrc) -> List {
-    if (items == null || items.isEmpty) return []
-    if (isrc == null || isrc == "") return items
+  /// Reads an artist's name whether it arrives as a map, a struct or a bare
+  /// string. `is Map` cannot be used: a Hetu struct is not a Map, so the test
+  /// silently fails and the whole object ends up stringified into the query.
+  fun artistName(artist) -> String {
+    if (artist == null) return ""
+    var name = artist["name"]
+    if (name != null) return name.toString()
+    return artist.toString()
+  }
 
-    var wanted = isrc.toUpperCase()
-    var ordered = []
-    for (var item in items) {
-      var candidate = item["isrc"]
-      if (candidate != null && candidate.toUpperCase() == wanted) ordered.add(item)
+  fun searchText(track: Map) -> String {
+    var name = track["name"] ?? ""
+
+    var names = []
+    if (track["artists"] != null) {
+      for (var artist in track["artists"]) {
+        var artistName = artistName(artist)
+        if (artistName != "") names.add(artistName)
+      }
     }
-    for (var item in items) {
-      var candidate = item["isrc"]
-      if (candidate == null || candidate.toUpperCase() != wanted) ordered.add(item)
-    }
-    return ordered
+
+    if (names.isEmpty) return name
+    return "${name} ${names.join(", ")}"
+  }
+
+  /// Asks each source in turn and stops at the first with results.
+  fun askFrom(index: int, groups: List, track: Map, query: String) -> Future {
+    if (index >= groups.length) return Future.value([])
+
+    var group = groups[index]
+    var source = sourceFor(group["type"])
+    if (source == null) return askFrom(index + 1, groups, track, query)
+
+    return source.matches(track, query, group["bases"]).then((found) {
+      if (found != null && found.isNotEmpty) return found
+      return askFrom(index + 1, groups, track, query)
+    })
   }
 
   /// Find matching audio sources for a given track. The first match is
@@ -148,91 +136,10 @@ class AudioSourceEndpoint {
     var name = track["name"] ?? ""
     if (name == "") return Future.value([])
 
-    var names = []
-    if (track["artists"] != null) {
-      for (var artist in track["artists"]) {
-        var artistName = (artist is Map) ? artist["name"] : artist.toString()
-        if (artistName != null && artistName != "") names.add(artistName)
-      }
-    }
+    var query = searchText(track)
 
-    var artistText = names.join(", ")
-    var query = names.isEmpty ? name : "${name} ${artistText}"
-
-    return searchFrom(0, query).then((items) {
-      if (items == null || items.isEmpty) return []
-      return Converter.toSpotubeMatchObject(rank(items, track["isrc"]))
-    })
-  }
-
-  /// hifi-api hands back a base64 manifest instead of a URL. The BTS variant
-  /// decodes to JSON holding a direct CDN link; the Hi-Res variant is a DASH
-  /// manifest an audio element cannot play, so it is skipped.
-  fun decodeManifest(payload) {
-    if (payload == null) return null
-    if (payload["manifestMimeType"] != "application/vnd.tidal.bts") return null
-
-    var raw = payload["manifest"]
-    if (raw == null || raw == "") return null
-
-    var manifest = JSON.decode(utf8.decode(Base64.decode(raw)))
-    var urls = manifest["urls"]
-    if (urls == null || urls.isEmpty) return null
-
-    return {
-      "url": urls[0],
-      "codec": manifest["codecs"] ?? "",
-    }
-  }
-
-  fun toStreamObject(decoded: Map, payload: Map) -> Map {
-    var codec = decoded["codec"] ?? ""
-    var lossless = codec.contains("flac")
-
-    return {
-      "url": decoded["url"],
-      "container": lossless ? "flac" : "mp4",
-      "type": lossless ? "lossless" : "lossy",
-      "codec": lossless ? "flac" : "aac",
-      "bitrate": lossless ? 1411000 : 320000,
-      "sampleRate": payload["sampleRate"] ?? 44100,
-      "bitDepth": payload["bitDepth"] ?? 16,
-    }.toJson()
-  }
-
-  /// Walks every endpoint/quality pair, collecting each distinct stream so
-  /// Spotube can honour the user's quality preference. A lower-tier account
-  /// returns the same URL for every quality, which is deduplicated here.
-  fun collect(endpointIndex: int, qualityIndex: int, id: String, found: List) -> Future {
-    if (endpointIndex >= ENDPOINTS.length) return Future.value(found)
-
-    if (qualityIndex >= QUALITIES.length) {
-      // Endpoint answered with at least one stream; no need to try the others.
-      if (found.isNotEmpty) return Future.value(found)
-      return collect(endpointIndex + 1, 0, id, found)
-    }
-
-    return client.get_req(
-      "${ENDPOINTS[endpointIndex]}/track/",
-      queryParameters: {
-        "id": id,
-        "quality": QUALITIES[qualityIndex],
-      }.toJson(),
-    ).then((res) {
-      if (res.statusCode == 200 && res.data != null && res.data["detail"] == null) {
-        var payload = res.data["data"]
-        var decoded = decodeManifest(payload)
-
-        if (decoded != null) {
-          var duplicate = false
-          for (var stream in found) {
-            if (stream["url"] == decoded["url"]) duplicate = true
-          }
-          if (!duplicate) found.add(toStreamObject(decoded, payload))
-        }
-      }
-
-      return collect(endpointIndex, qualityIndex + 1, id, found)
+    return store.resolve().then((sources) {
+      return askFrom(0, grouped(sources), track, query)
     })
   }
 
@@ -245,8 +152,21 @@ class AudioSourceEndpoint {
     var id = match["id"]
     if (id == null || id == "") return Future.value([])
 
-    return collect(0, 0, id.toString(), [])
+    var text = id.toString()
+    var cut = text.indexOf(ID_SEPARATOR)
+
+    // No prefix means a match resolved by an older version, which could only
+    // have come from hifi-api.
+    var type = cut > 0 ? text.substring(0, cut) : LEGACY_SOURCE
+    var reference = cut > 0 ? text.substring(cut + 1) : text
+
+    var source = sourceFor(type)
+    if (source == null) return Future.value([])
+
+    return store.basesFor(type).then((bases) {
+      return source.streams(match, reference, bases)
+    })
   }
 }
 
-export { AudioSourceEndpoint, Converter }
+export { AudioSourceEndpoint }

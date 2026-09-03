@@ -37,6 +37,9 @@ jobs:
       - name: Run build
         run: make
 
+      - name: Run the runtime harness
+        run: make test
+
       - name: Archive plugin
         run: make archive
         shell: bash

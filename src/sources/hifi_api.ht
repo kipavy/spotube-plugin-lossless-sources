@@ -1,0 +1,242 @@
+import "module:std" as std
+
+// Every std type touched at runtime must be resolvable here, including the
+// *class* behind an instance: calling utf8.decode() needs Utf8Codec in scope,
+// not just utf8. None of this is caught at compile time.
+var Base64 = std.Base64
+var Utf8Codec = std.Utf8Codec
+var utf8 = std.utf8
+var HttpClient = std.HttpClient
+// Never referenced directly, but the runtime resolves the type of every
+// `.then` callback parameter in this scope. Without it: "Undefined identifier
+// [HttpResponse]" at the first request, at runtime only — it still compiles.
+var HttpResponse = std.HttpResponse
+var JSON = std.JSON
+// Spotube's runtime has no Future.delayed -- waiting goes through FutureUtils,
+// which takes a Duration rather than a number of seconds.
+var FutureUtils = std.FutureUtils
+var Duration = std.Duration
+
+/// Backoff before retrying an instance that answered 202. Its length also caps
+/// the number of retries, so a permanently busy host cannot stall playback:
+/// three tries, then the next instance.
+var RETRY_DELAYS = [2, 4, 8]
+
+/// Requested in order. An instance backed by a lower Tidal tier silently
+/// answers with the best it has, so asking for Hi-Res first costs nothing.
+var QUALITIES = ["HI_RES_LOSSLESS", "LOSSLESS", "HIGH"]
+
+/// Tidal cover fields are bare UUIDs rather than URLs.
+fun coverUrl(cover) {
+  if (cover == null || cover == "") return ""
+  var path = cover.replaceAll("-", "/")
+  return "https://resources.tidal.com/images/${path}/320x320.jpg"
+}
+
+/// Tidal through any hifi-api compatible instance.
+///
+/// Instances are interchangeable and each proxies Tidal with its own account,
+/// so a blocked one only costs a fallback to the next. Catalogue reads need no
+/// account, which is why an instance can answer searches perfectly while
+/// serving no audio at all -- only /track/ proves it works.
+class HifiApiSource {
+  var client: HttpClient
+
+  /// Prefix written into every match id, so the router knows which source has
+  /// to resolve the stream later.
+  get id -> String => "hifi-api"
+
+  get supportedPresets -> List {
+    return [
+      {
+        type: "lossy",
+        name: "mp4",
+        qualities: [
+          { bitrate: 320000 },
+        ],
+      }.toJson(),
+      {
+        type: "lossless",
+        name: "flac",
+        qualities: [
+          { bitDepth: 24, sampleRate: 96000 },
+          { bitDepth: 16, sampleRate: 44100 },
+        ],
+      }.toJson(),
+    ]
+  }
+
+  construct (this.client)
+
+  /// Maps a hifi-api search item to a SpotubeAudioSourceMatchObject.
+  fun toMatchObjects(items: List) -> List {
+    if (items == null || items.isEmpty) return []
+    return items.map((item) {
+      var names = []
+      if (item["artist"] != null && item["artist"]["name"] != null) {
+        names.add(item["artist"]["name"])
+      }
+      if (item["artists"] != null) {
+        for (var artist in item["artists"]) {
+          var name = artist["name"]
+          if (name != null && !names.contains(name)) names.add(name)
+        }
+      }
+      if (names.isEmpty) names.add("Unknown")
+
+      var album = item["album"]
+      var cover = album != null ? album["cover"] : null
+
+      return {
+        "id": "hifi-api:${item["id"]}",
+        "title": item["title"] ?? "",
+        "artists": names,
+        "duration": (item["duration"] ?? 0) * 1000,
+        "thumbnail": coverUrl(cover),
+        "externalUri": "https://tidal.com/browse/track/${item["id"]}",
+        "isrc": item["isrc"] ?? "",
+        "album": album != null ? (album["title"] ?? "") : "",
+      }.toJson()
+    }).toList()
+  }
+
+  /// Searches one instance, falling through to the next when a host is asleep,
+  /// blocked, or returns nothing useful.
+  fun searchFrom(index: int, query: String, bases: List) -> Future {
+    if (index >= bases.length) return Future.value([])
+
+    return client.get_req(
+      "${bases[index]}/search/",
+      queryParameters: { "s": query, "limit": 20 }.toJson(),
+    ).then((res) {
+      if (res.statusCode != 200 || res.data == null) {
+        return searchFrom(index + 1, query, bases)
+      }
+      var payload = res.data["data"]
+      if (payload == null) return searchFrom(index + 1, query, bases)
+
+      var items = payload["items"]
+      if (items == null || items.isEmpty) return searchFrom(index + 1, query, bases)
+
+      return items
+    })
+  }
+
+  /// Ranks an exact ISRC hit first. Spotube hands us the ISRC from the metadata
+  /// provider, and hifi-api returns it per search result, so when both are
+  /// present the match is exact rather than guessed from the title.
+  fun rank(items: List, isrc) -> List {
+    if (items == null || items.isEmpty) return []
+    if (isrc == null || isrc == "") return items
+
+    var wanted = isrc.toUpperCase()
+    var ordered = []
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (candidate != null && candidate.toUpperCase() == wanted) ordered.add(item)
+    }
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (candidate == null || candidate.toUpperCase() != wanted) ordered.add(item)
+    }
+    return ordered
+  }
+
+  fun matches(track: Map, query: String, bases: List) -> Future {
+    if (bases == null || bases.isEmpty) return Future.value([])
+
+    return searchFrom(0, query, bases).then((items) {
+      if (items == null || items.isEmpty) return []
+      return toMatchObjects(rank(items, track["isrc"]))
+    })
+  }
+
+  /// hifi-api hands back a base64 manifest instead of a URL. The BTS variant
+  /// decodes to JSON holding a direct CDN link; the Hi-Res variant is a DASH
+  /// manifest an audio element cannot play, so it is skipped.
+  fun decodeManifest(payload) {
+    if (payload == null) return null
+    if (payload["manifestMimeType"] != "application/vnd.tidal.bts") return null
+
+    var raw = payload["manifest"]
+    if (raw == null || raw == "") return null
+
+    var manifest = JSON.decode(utf8.decode(Base64.decode(raw)))
+    var urls = manifest["urls"]
+    if (urls == null || urls.isEmpty) return null
+
+    return {
+      "url": urls[0],
+      "codec": manifest["codecs"] ?? "",
+    }
+  }
+
+  fun toStreamObject(decoded: Map, payload: Map) -> Map {
+    var codec = decoded["codec"] ?? ""
+    var lossless = codec.contains("flac")
+
+    return {
+      "url": decoded["url"],
+      "container": lossless ? "flac" : "mp4",
+      "type": lossless ? "lossless" : "lossy",
+      "codec": lossless ? "flac" : "aac",
+      "bitrate": lossless ? 1411000 : 320000,
+      "sampleRate": payload["sampleRate"] ?? 44100,
+      "bitDepth": payload["bitDepth"] ?? 16,
+    }.toJson()
+  }
+
+  /// Walks every instance/quality pair, collecting each distinct stream so
+  /// Spotube can honour the user's quality preference. A lower-tier account
+  /// returns the same URL for every quality, which is deduplicated here.
+  fun collect(baseIndex: int, qualityIndex: int, id: String, found: List, bases: List, attempt: int) -> Future {
+    if (baseIndex >= bases.length) return Future.value(found)
+
+    if (qualityIndex >= QUALITIES.length) {
+      // Instance answered with at least one stream; no need to try the others.
+      if (found.isNotEmpty) return Future.value(found)
+      return collect(baseIndex + 1, 0, id, found, bases, 0)
+    }
+
+    return client.get_req(
+      "${bases[baseIndex]}/track/",
+      queryParameters: {
+        "id": id,
+        "quality": QUALITIES[qualityIndex],
+      }.toJson(),
+    ).then((res) {
+      // 202 means every playback account on that instance is busy right now,
+      // which is worth waiting out -- unlike 403 or 503, where the account is
+      // blocked and retrying only wastes the user's time.
+      if (res.statusCode == 202 && attempt < RETRY_DELAYS.length) {
+        return FutureUtils.delayed(Duration(seconds: RETRY_DELAYS[attempt]), () {
+          return collect(baseIndex, qualityIndex, id, found, bases, attempt + 1)
+        })
+      }
+
+      if (res.statusCode == 200 && res.data != null && res.data["detail"] == null) {
+        var payload = res.data["data"]
+        var decoded = decodeManifest(payload)
+
+        if (decoded != null) {
+          var duplicate = false
+          for (var stream in found) {
+            if (stream["url"] == decoded["url"]) duplicate = true
+          }
+          if (!duplicate) found.add(toStreamObject(decoded, payload))
+        }
+      }
+
+      return collect(baseIndex, qualityIndex + 1, id, found, bases, 0)
+    })
+  }
+
+  fun streams(match: Map, reference: String, bases: List) -> Future {
+    if (bases == null || bases.isEmpty) return Future.value([])
+    if (reference == null || reference == "") return Future.value([])
+
+    return collect(0, 0, reference, [], bases, 0)
+  }
+}
+
+export { HifiApiSource }
