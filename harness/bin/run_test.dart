@@ -288,8 +288,8 @@ Future<void> main(List<String> args) async {
 
   var formShown = 0;
 
-  // Stands in for the engine Spotube binds. One result for the ISRC search and
-  // one for the title search, so both paths can be told apart.
+  // Stands in for the engine Spotube binds. Keyed by query, so the ISRC
+  // search and the title search can be told apart.
   final youtube = YouTubeEngine(
     results: {
       'GBDUW0000053': [
@@ -301,12 +301,35 @@ Future<void> main(List<String> args) async {
           'thumbnail': 'https://i.ytimg.com/vi/FGBhQbmPwH8/hq.jpg',
         },
       ],
-      'Unfindable Song Nobody Uploaded': [
+      // An ISRC YouTube has never indexed. The search is not empty -- it
+      // never is -- it is simply unrelated, which is the case that used to
+      // be played as if it were the track.
+      'FR96X2189530': [
         {
-          'id': 'abcdefghijk',
-          'title': 'Unfindable Song',
-          'author': 'Nobody',
-          'duration': 180000,
+          'id': 'narwalvacuum',
+          'title': 'Narwal Freo 20 Edge: 31,000 Pa and a roller that extends',
+          'author': 'Gadget Reviews',
+          'duration': 1108000,
+          'thumbnail': '',
+        },
+      ],
+      // The upload drops the "(feat. ...)" the catalogue carries, so the
+      // title is a prefix of the track name rather than the other way round.
+      'FRZ109900001': [
+        {
+          'id': 'commecaroline',
+          'title': 'Comme Caroline',
+          'author': 'Zaho',
+          'duration': 200000,
+          'thumbnail': '',
+        },
+      ],
+      "C'est la cite Jul": [
+        {
+          'id': 'cestlacite1',
+          'title': "Jul - C'est La Cite Ft. Naps (Album Demain Ca ira)",
+          'author': 'Jul',
+          'duration': 221000,
           'thumbnail': '',
         },
       ],
@@ -502,12 +525,12 @@ Future<void> main(List<String> args) async {
       await hetu.eval('[{"type": "archive", "base": "${looseArchive.base}"},'
           '{"type": "youtube", "base": "https://youtube.com"}]'));
 
-  final unfindable = await hetu.eval('''
-    { "name": "Unfindable Song Nobody Uploaded", "isrc": "GBDUW0000053",
-      "artists": [{ "name": "Nobody" }] }
+  final oneMoreTime = await hetu.eval('''
+    { "name": "One More Time", "isrc": "GBDUW0000053",
+      "artists": [{ "name": "Daft Punk" }] }
   ''');
   final ytMatches =
-      await audioSource.invoke('matches', positionalArgs: [unfindable]) as List;
+      await audioSource.invoke('matches', positionalArgs: [oneMoreTime]) as List;
   check('youtube produced a match', ytMatches.isNotEmpty, 'matches=$ytMatches');
   check('the isrc was searched first', youtube.queries.first == 'GBDUW0000053',
       'queries=${youtube.queries}');
@@ -526,6 +549,52 @@ Future<void> main(List<String> args) async {
       'streams=$ytStreams');
   check('youtube audio is reported lossy, never lossless',
       ytStreams.every((s) => s['type'] == 'lossy'), 'streams=$ytStreams');
+
+  print('\nan isrc youtube never indexed does not play an unrelated video');
+  // Measured against the real thing: roughly one chart track in twenty has an
+  // ISRC YouTube cannot resolve, and the search then returns whatever it likes
+  // -- a vacuum cleaner review, a supermarket advert. Accepting a non-empty
+  // result list is what let those through.
+  final queriesBefore = youtube.queries.length;
+  final strayIsrc = await hetu.eval('''
+    { "name": "C'est la cite", "isrc": "FR96X2189530",
+      "artists": [{ "name": "Jul" }] }
+  ''');
+  final strayMatches =
+      await audioSource.invoke('matches', positionalArgs: [strayIsrc]) as List;
+  final triedQueries = youtube.queries.sublist(queriesBefore);
+  check('the isrc was still tried first', triedQueries.first == 'FR96X2189530',
+      'queries=$triedQueries');
+  check('the title search ran after the isrc returned nothing usable',
+      triedQueries.length == 2 && triedQueries[1] == "C'est la cite Jul",
+      'queries=$triedQueries');
+  check('the unrelated video was not offered as a match',
+      strayMatches.every((m) => m['id'] != 'youtube:narwalvacuum'),
+      'matches=$strayMatches');
+  check(
+      'the track found by title is what plays',
+      strayMatches.isNotEmpty &&
+          strayMatches.first['id'] == 'youtube:cestlacite1',
+      'matches=$strayMatches');
+
+  print('\na feat. credit the upload leaves out is still the same recording');
+  // Measured: two chart tracks in forty carry a "(with ...)" or "(feat. ...)"
+  // the upload omits. Rejecting those would throw away a correct, ISRC-exact
+  // match and send a good track down the title-search path for no reason.
+  final queriesBeforeFeat = youtube.queries.length;
+  final featTrack = await hetu.eval('''
+    { "name": "Comme Caroline (feat. MC Solaar)", "isrc": "FRZ109900001",
+      "artists": [{ "name": "Zaho" }] }
+  ''');
+  final featMatches =
+      await audioSource.invoke('matches', positionalArgs: [featTrack]) as List;
+  check('the isrc match was kept',
+      featMatches.isNotEmpty &&
+          featMatches.first['id'] == 'youtube:commecaroline',
+      'matches=$featMatches');
+  check('no title search was needed',
+      youtube.queries.length - queriesBeforeFeat == 1,
+      'queries=${youtube.queries.sublist(queriesBeforeFeat)}');
 
   print('\ncaching and fallbacks');
   // Fetch once for real so a cache exists to fall back to.

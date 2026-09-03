@@ -6,6 +6,11 @@ var YouTubeEngine = spotube.YouTubeEngine
 /// tracks that are worse than anything a listener would accept.
 var MIN_BITRATE = 64000
 
+/// Characters kept when comparing a result title to the track name. Anything
+/// else is dropped, so "C'est la cité" and "Jul - C'est La Cite Ft. Naps"
+/// compare equal.
+var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
+
 /// YouTube, through the engine Spotube already ships.
 ///
 /// This is the only source here that covers the mainstream catalogue reliably,
@@ -63,9 +68,46 @@ class YouTubeSource {
     }).toList()
   }
 
+  /// Lowercases and strips punctuation so titles can be compared loosely.
+  fun simplify(value) -> String {
+    if (value == null) return ""
+    var lower = value.toString().toLowerCase()
+    var kept = ""
+    for (var index = 0; index < lower.length; index = index + 1) {
+      var character = lower.substring(index, index + 1)
+      if (KEEP.contains(character)) kept = kept + character
+    }
+    return kept.trim()
+  }
+
+  /// Keeps only the results whose title still carries the track name.
+  ///
+  /// A search for an ISRC YouTube never indexed does not come back empty --
+  /// it comes back with whatever the ranker liked, a gadget review or a
+  /// supermarket advert. Nothing downstream checks a match again, so an
+  /// unrelated video would be handed to the player as if it were the track.
+  fun plausible(results: List, track: Map) -> List {
+    var name = simplify(track["name"])
+    if (name == "") return results
+
+    var kept = []
+    for (var item in results) {
+      // Either way round: an upload often drops the "(feat. ...)" the
+      // catalogue carries, which makes its title the shorter of the two.
+      var title = simplify(item["title"])
+      if (title == "") continue
+      if (title.contains(name) || name.contains(title)) kept.add(item)
+    }
+    return kept
+  }
+
   /// Searches the ISRC first when there is one: it names one exact recording,
   /// and YouTube indexes it often enough to be worth a try before falling back
   /// to the title and artists.
+  ///
+  /// The ISRC results are only taken if one of them looks like the track. An
+  /// unrecognised ISRC still returns videos, so "the list is not empty" is not
+  /// evidence of a match, and treating it as such played the wrong audio.
   fun matches(track: Map, query: String, bases: List) -> Future {
     var isrc = track["isrc"] ?? ""
 
@@ -76,7 +118,10 @@ class YouTubeSource {
     }
 
     return yt.search(isrc).then((results) {
-      if (results != null && results.isNotEmpty) return toMatchObjects(results)
+      if (results != null && results.isNotEmpty) {
+        var kept = plausible(results, track)
+        if (kept.isNotEmpty) return toMatchObjects(kept)
+      }
       return yt.search(query).then((fallback) {
         return toMatchObjects(fallback)
       })
