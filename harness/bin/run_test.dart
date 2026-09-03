@@ -86,10 +86,16 @@ abstract class FakeServer {
 /// A hifi-api instance. `alive: false` answers 503 like a blocked account,
 /// `busyResponses` answers 202 like an instance whose accounts are all in use,
 /// and `hasCatalogue: false` answers searches with nothing.
+///
+/// `streamsBlocked: true` is the state every public instance is actually in:
+/// the catalogue is readable without an account, so searching answers
+/// perfectly, while the account behind the stream endpoint is banned and
+/// /track/ returns an upstream error.
 class FakeHifi extends FakeServer {
   final bool alive;
   final int busyResponses;
   final bool hasCatalogue;
+  final bool streamsBlocked;
 
   final Map<String, int> trackCalls = {};
 
@@ -97,6 +103,7 @@ class FakeHifi extends FakeServer {
     this.alive = true,
     this.busyResponses = 0,
     this.hasCatalogue = true,
+    this.streamsBlocked = false,
   });
 
   static String btsManifest() {
@@ -147,6 +154,13 @@ class FakeHifi extends FakeServer {
     }
 
     if (request.uri.path == '/track/') {
+      if (streamsBlocked) {
+        request.response.statusCode = 500;
+        request.response.write(jsonEncode({'detail': 'Upstream API error'}));
+        await request.response.close();
+        return;
+      }
+
       final quality = request.uri.queryParameters['quality'] ?? '';
       final seen = (trackCalls[quality] ?? 0) + 1;
       trackCalls[quality] = seen;
@@ -299,6 +313,17 @@ Future<void> main(List<String> args) async {
           'author': 'Daft Punk',
           'duration': 320000,
           'thumbnail': 'https://i.ytimg.com/vi/FGBhQbmPwH8/hq.jpg',
+        },
+      ],
+      // What a blocked hifi-api match tops up with: the same recording,
+      // looked up by the match's own title and artist.
+      'One More Time Daft Punk': [
+        {
+          'id': 'ytonemoretime',
+          'title': 'Daft Punk - One More Time (Official Video)',
+          'author': 'Daft Punk',
+          'duration': 320000,
+          'thumbnail': '',
         },
       ],
       // The same recording on YouTube, found from an archive match's own
@@ -625,6 +650,40 @@ Future<void> main(List<String> args) async {
   check('no title search was needed',
       youtube.queries.length - queriesBeforeFeat == 1,
       'queries=${youtube.queries.sublist(queriesBeforeFeat)}');
+
+  print('\na searchable instance that cannot stream still plays');
+  // The state every public instance is in: the catalogue needs no account, so
+  // searching answers perfectly and the router stops there, while /track/ is
+  // banned. Nothing downstream reconsiders the source, so the match wins the
+  // routing and then produces no audio at all -- which is why almost nothing
+  // played once Tidal started banning the accounts.
+  final searchOnly = FakeHifi(streamsBlocked: true);
+  await searchOnly.start();
+  storage.store.clear();
+  store.memberSet(
+      'cached',
+      await hetu.eval('[{"type": "hifi-api", "base": "${searchOnly.base}"},'
+          '{"type": "youtube", "base": "https://youtube.com"}]'));
+
+  final blockedTrack = await hetu.eval('''
+    { "name": "One More Time", "isrc": "GBDUW0000053",
+      "artists": [{ "name": "Daft Punk" }] }
+  ''');
+  final blockedMatches =
+      await audioSource.invoke('matches', positionalArgs: [blockedTrack]) as List;
+  check('the instance still won the routing on its search alone',
+      blockedMatches.isNotEmpty &&
+          blockedMatches.first['id'].toString().startsWith('hifi-api:'),
+      'matches=$blockedMatches');
+
+  final blockedStreams = await audioSource
+      .invoke('streams', positionalArgs: [blockedMatches.first]) as List;
+  check('the track plays anyway rather than returning nothing',
+      blockedStreams.isNotEmpty, 'streams=$blockedStreams');
+  check(
+      'what plays is a container the default preset can select',
+      blockedStreams.map((s) => s['container']).toSet().contains('mp4'),
+      'streams=$blockedStreams');
 
   print('\ncaching and fallbacks');
   // Fetch once for real so a cache exists to fall back to.

@@ -200,19 +200,22 @@ class AudioSourceEndpoint {
   /// every preset playable. The flac stays first, so lossless still wins the
   /// moment it is the preset asked for.
   fun topUp(match: Map, type: String, found: List) -> Future {
-    if (found == null) return Future.value([])
-    // YouTube is the source being topped up with; it cannot top up itself.
-    if (type == "youtube") return Future.value(found)
+    // A blocked instance answers the catalogue but not the stream endpoint,
+    // so this arrives empty far more often than it arrives with a flac.
+    var have = found == null ? [] : found
 
-    for (var stream in found) {
-      if (stream["container"] != "flac") return Future.value(found)
+    // YouTube is the source being topped up with; it cannot top up itself.
+    if (type == "youtube") return Future.value(have)
+
+    for (var stream in have) {
+      if (stream["container"] != "flac") return Future.value(have)
     }
 
     // A match object carries its artists as plain strings, not the maps a
     // track arrives with, so the query is built here rather than through
     // searchText.
     var title = (match["title"] ?? "").toString()
-    if (title == "") return Future.value(found)
+    if (title == "") return Future.value(have)
 
     var names = []
     if (match["artists"] != null) {
@@ -232,7 +235,7 @@ class AudioSourceEndpoint {
     }.toJson()
 
     return youtube.matches(wanted, query, []).then((alternatives) {
-      if (alternatives == null || alternatives.isEmpty) return found
+      if (alternatives == null || alternatives.isEmpty) return have
 
       var alternative = alternatives[0]
       var text = alternative["id"].toString()
@@ -240,10 +243,10 @@ class AudioSourceEndpoint {
       var reference = cut > 0 ? text.substring(cut + 1) : text
 
       return youtube.streams(alternative, reference, []).then((extra) {
-        if (extra == null || extra.isEmpty) return found
+        if (extra == null || extra.isEmpty) return have
 
         var all = []
-        for (var stream in found) { all.add(stream) }
+        for (var stream in have) { all.add(stream) }
         for (var stream in extra) { all.add(stream) }
         return all
       })
