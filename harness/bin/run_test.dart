@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:hetu_script/hetu_script.dart';
 import 'package:hetu_std/hetu_std.dart';
+import 'package:plugin_harness/fake_youtube.binding.dart';
 import 'package:plugin_harness/form.binding.dart';
 import 'package:plugin_harness/localstorage.binding.dart';
 import 'package:plugin_harness/localstorage.dart';
@@ -287,6 +288,36 @@ Future<void> main(List<String> args) async {
 
   var formShown = 0;
 
+  // Stands in for the engine Spotube binds. One result for the ISRC search and
+  // one for the title search, so both paths can be told apart.
+  final youtube = YouTubeEngine(
+    results: {
+      'GBDUW0000053': [
+        {
+          'id': 'FGBhQbmPwH8',
+          'title': 'Daft Punk - One More Time (Official Video)',
+          'author': 'Daft Punk',
+          'duration': 320000,
+          'thumbnail': 'https://i.ytimg.com/vi/FGBhQbmPwH8/hq.jpg',
+        },
+      ],
+      'Unfindable Song Nobody Uploaded': [
+        {
+          'id': 'abcdefghijk',
+          'title': 'Unfindable Song',
+          'author': 'Nobody',
+          'duration': 180000,
+          'thumbnail': '',
+        },
+      ],
+    },
+    streams: [
+      {'url': 'https://yt.example/low.webm', 'container': 'webm', 'bitrate': 48000},
+      {'url': 'https://yt.example/opus.webm', 'container': 'webm', 'bitrate': 128000},
+      {'url': 'https://yt.example/aac.mp4', 'container': 'mp4', 'bitrate': 129000},
+    ],
+  );
+
   // Bytecode only, exactly as Spotube loads a packaged plugin -- no source
   // context, so nothing here can accidentally pass by reading the .ht files.
   final hetu = Hetu(config: HetuConfig(printPerformanceStatistics: false));
@@ -295,6 +326,7 @@ Future<void> main(List<String> args) async {
   HetuStdLoader.loadBindings(hetu);
   hetu.interpreter
       .bindExternalClass(LocalStorageClassBinding(localStorageImpl: storage));
+  hetu.interpreter.bindExternalClass(FakeYouTubeClassBinding(youtube));
   hetu.interpreter.bindExternalClass(SpotubeFormClassBinding(
     onShow: (title, fields) async {
       // Bound so a stray form call is caught rather than silently ignored.
@@ -464,6 +496,37 @@ Future<void> main(List<String> args) async {
           looseArchive.queries[1].startsWith('"Grateful Dead" AND "Scarlet Begonias"'),
       'queries=${looseArchive.queries}');
 
+  print('\nyoutube answers when nothing lossless has the track');
+  store.memberSet(
+      'cached',
+      await hetu.eval('[{"type": "archive", "base": "${looseArchive.base}"},'
+          '{"type": "youtube", "base": "https://youtube.com"}]'));
+
+  final unfindable = await hetu.eval('''
+    { "name": "Unfindable Song Nobody Uploaded", "isrc": "GBDUW0000053",
+      "artists": [{ "name": "Nobody" }] }
+  ''');
+  final ytMatches =
+      await audioSource.invoke('matches', positionalArgs: [unfindable]) as List;
+  check('youtube produced a match', ytMatches.isNotEmpty, 'matches=$ytMatches');
+  check('the isrc was searched first', youtube.queries.first == 'GBDUW0000053',
+      'queries=${youtube.queries}');
+  final ytMatch = ytMatches.first;
+  check('match is tagged as youtube', ytMatch['id'] == 'youtube:FGBhQbmPwH8',
+      'match=$ytMatch');
+
+  final ytStreams =
+      await audioSource.invoke('streams', positionalArgs: [ytMatch]) as List;
+  check('the video id was resolved, without its prefix',
+      youtube.manifests.last == 'FGBhQbmPwH8', 'manifests=${youtube.manifests}');
+  check('streams below 64kbps are dropped', ytStreams.length == 2,
+      'streams=$ytStreams');
+  check('webm is reported as opus, mp4 as aac',
+      ytStreams[0]['codec'] == 'opus' && ytStreams[1]['codec'] == 'aac',
+      'streams=$ytStreams');
+  check('youtube audio is reported lossy, never lossless',
+      ytStreams.every((s) => s['type'] == 'lossy'), 'streams=$ytStreams');
+
   print('\ncaching and fallbacks');
   // Fetch once for real so a cache exists to fall back to.
   store.memberSet('cached', null);
@@ -492,10 +555,10 @@ Future<void> main(List<String> args) async {
   store.memberSet('cached', null);
   final defaults = await store.invoke('resolve') as List;
   check('bundled defaults are all that is left',
-      defaults.length == 3 && defaults.last['type'] == 'archive',
+      defaults.length == 4 && defaults.last['type'] == 'youtube',
       'defaults=$defaults');
-  check('the archive is bundled, so something always answers',
-      defaults.any((e) => e['base'] == 'https://archive.org'),
+  check('lossless sources are bundled ahead of youtube',
+      defaults[defaults.length - 2]['base'] == 'https://archive.org',
       'defaults=$defaults');
 
   await dead.stop();

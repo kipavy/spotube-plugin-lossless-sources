@@ -1,0 +1,114 @@
+import "module:spotube_plugin" as spotube
+
+var YouTubeEngine = spotube.YouTubeEngine
+
+/// Streams under this are ignored: YouTube also serves very low bitrate audio
+/// tracks that are worse than anything a listener would accept.
+var MIN_BITRATE = 64000
+
+/// YouTube, through the engine Spotube already ships.
+///
+/// This is the only source here that covers the mainstream catalogue reliably,
+/// and the only one that is not lossless: audio comes back as Opus or AAC,
+/// typically 128-160 kbps. It is last in the order for exactly that reason --
+/// it answers when nothing better could, so a track plays instead of failing.
+///
+/// No host, no account and no key: the engine runs inside Spotube, which is
+/// why `bases` is ignored here.
+class YouTubeSource {
+  var yt: YouTubeEngine
+
+  get id -> String => "youtube"
+
+  get supportedPresets -> List {
+    return [
+      {
+        type: "lossy",
+        name: "mp4",
+        qualities: [
+          { bitrate: 256000 },
+          { bitrate: 128000 },
+          { bitrate: 96000 },
+        ],
+      }.toJson(),
+      {
+        type: "lossy",
+        name: "webm",
+        qualities: [
+          { bitrate: 256000 },
+          { bitrate: 128000 },
+          { bitrate: 96000 },
+        ],
+      }.toJson(),
+    ]
+  }
+
+  construct () {
+    yt = YouTubeEngine()
+  }
+
+  fun toMatchObjects(results: List) -> List {
+    if (results == null || results.isEmpty) return []
+    return results.map((item) {
+      return {
+        "id": "youtube:${item["id"]}",
+        "title": item["title"] ?? "",
+        "artists": [item["author"] ?? "YouTube"],
+        "duration": item["duration"] ?? 0,
+        "thumbnail": item["thumbnail"] ?? "",
+        "externalUri": "https://youtube.com/watch?v=${item["id"]}",
+        "isrc": "",
+        "album": "",
+      }.toJson()
+    }).toList()
+  }
+
+  /// Searches the ISRC first when there is one: it names one exact recording,
+  /// and YouTube indexes it often enough to be worth a try before falling back
+  /// to the title and artists.
+  fun matches(track: Map, query: String, bases: List) -> Future {
+    var isrc = track["isrc"] ?? ""
+
+    if (isrc == "") {
+      return yt.search(query).then((results) {
+        return toMatchObjects(results)
+      })
+    }
+
+    return yt.search(isrc).then((results) {
+      if (results != null && results.isNotEmpty) return toMatchObjects(results)
+      return yt.search(query).then((fallback) {
+        return toMatchObjects(fallback)
+      })
+    })
+  }
+
+  fun streams(match: Map, reference: String, bases: List) -> Future {
+    if (reference == null || reference == "") return Future.value([])
+
+    return yt.streamManifest(reference).then((manifest) {
+      if (manifest == null || manifest.isEmpty) return []
+
+      var streams = []
+      for (var stream in manifest) {
+        var bitrate = stream["bitrate"] ?? 0
+        if (bitrate < MIN_BITRATE) continue
+
+        var container = stream["container"] ?? "mp4"
+
+        streams.add({
+          "url": stream["url"],
+          "container": container,
+          "type": "lossy",
+          // webm carries Opus, mp4 carries AAC. Reporting the real codec
+          // matters because Spotube shows it and picks presets by container.
+          "codec": container == "webm" ? "opus" : "aac",
+          "bitrate": bitrate,
+        }.toJson())
+      }
+      return streams
+    })
+  }
+}
+
+export { YouTubeSource }

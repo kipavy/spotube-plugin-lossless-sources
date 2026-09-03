@@ -3,6 +3,7 @@ import "module:std" as std
 import { SourceStore } from './sources.ht'
 import { HifiApiSource } from '../sources/hifi_api.ht'
 import { ArchiveOrgSource } from '../sources/archive_org.ht'
+import { YouTubeSource } from '../sources/youtube.ht'
 
 var HttpClient = std.HttpClient
 // Never referenced directly, but the runtime resolves the type of every
@@ -29,15 +30,18 @@ class AudioSourceEndpoint {
 
   var hifiApi: HifiApiSource
   var archive: ArchiveOrgSource
+  var youtube: YouTubeSource
 
   construct (this.client, this.store) {
     hifiApi = HifiApiSource(client)
     archive = ArchiveOrgSource(client)
+    youtube = YouTubeSource()
   }
 
   fun sourceFor(type) {
     if (type == "hifi-api") return hifiApi
     if (type == "archive") return archive
+    if (type == "youtube") return youtube
     // An unknown type in the published list is skipped rather than fatal, so
     // a new source can be listed before every installed plugin understands it.
     return null
@@ -48,7 +52,8 @@ class AudioSourceEndpoint {
   /// Order matters. Spotube selects a preset by index, then keeps only the
   /// streams whose container equals that preset's name and reduces over them,
   /// which throws on an empty list rather than falling back. mp4 stays first
-  /// because that is what the hifi-api instances actually return.
+  /// because both the hifi-api instances and YouTube return it, so the default
+  /// selection always resolves to something.
   get supportedPresets -> List {
     return [
       {
@@ -56,6 +61,9 @@ class AudioSourceEndpoint {
         name: "mp4",
         qualities: [
           { bitrate: 320000 },
+          { bitrate: 256000 },
+          { bitrate: 128000 },
+          { bitrate: 96000 },
         ],
       }.toJson(),
       {
@@ -64,6 +72,15 @@ class AudioSourceEndpoint {
         qualities: [
           { bitDepth: 24, sampleRate: 96000 },
           { bitDepth: 16, sampleRate: 44100 },
+        ],
+      }.toJson(),
+      {
+        type: "lossy",
+        name: "webm",
+        qualities: [
+          { bitrate: 256000 },
+          { bitrate: 128000 },
+          { bitrate: 96000 },
         ],
       }.toJson(),
     ]

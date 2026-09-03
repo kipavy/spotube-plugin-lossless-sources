@@ -14,19 +14,24 @@ screen. Install it, select it as your audio source, done.
 |--------|---------------|-------------|
 | **hifi-api instances** | Tidal — the full mainstream catalogue, in FLAC or AAC 320 depending on the instance | 🔴 **every public instance is blocked** |
 | **Internet Archive** | Live recordings, public-domain material, and studio albums people have uploaded — all in FLAC | 🟢 working, and cannot be blocked |
+| **YouTube** | Everything else — the mainstream catalogue, in Opus or AAC | 🟢 working, but **lossy** (~128–160 kbps) |
 
-So, concretely, as of **September 2026**:
+Sources are tried in that order, so you get the best available rather than the
+first available:
 
-- A Grateful Dead show, a jazz session, an old public-domain record → **plays**,
-  in lossless FLAC.
-- A mainstream studio track → **plays if someone uploaded that album to the
-  Archive**, which is true more often than you would expect. Verified end to
-  end: Daft Punk's *One More Time* resolves to
-  `archive.org/download/discovery-daft-punk-2001-flac/01 One More Time.flac`
-  and streams as `audio/flac`. Queen and the Grateful Dead resolve too.
-- Anything nobody uploaded → **does not play**. Coverage is a lottery, not a
-  catalogue: there is no guarantee for any given track, and user uploads can be
-  taken down again without notice.
+1. **Tidal**, if any instance is alive — lossless, ISRC-exact.
+2. **The Internet Archive** — lossless FLAC. Verified: Daft Punk's *One More
+   Time* resolves to
+   `archive.org/download/discovery-daft-punk-2001-flac/01 One More Time.flac`
+   and streams as `audio/flac`. Coverage is a lottery, though — it depends on
+   someone having uploaded that album, and uploads can be taken down.
+3. **YouTube**, if neither had it — not lossless, but it has essentially
+   everything, so a track plays instead of failing.
+
+So today's Top 40 plays. It plays in FLAC when the Archive happens to hold the
+album, and in YouTube's Opus or AAC otherwise. The plugin never silently
+downgrades without telling you: each stream reports its real codec and bitrate,
+which Spotube shows.
 
 That is not a bug in this plugin, and reinstalling will not fix it. Every
 public hifi-api instance signs into Tidal with its own shared account, and
@@ -37,8 +42,8 @@ those instances — catalogue reads need no account — which is why they look
 alive while playing nothing.
 
 **When a Tidal instance comes back, this plugin starts using it on its own**,
-within the hour, with no update to install. That is what the source list below
-is for.
+within the hour, with no update to install — and lossless silently takes over
+from YouTube again. That is what the source list below is for.
 
 ## Install
 
@@ -104,6 +109,12 @@ because they are not obvious from the API:
   the correct recording is picked instead of guessed from the title. That
   matters for remasters, radio edits and live versions, which otherwise look
   identical by name.
+
+**YouTube** uses the engine Spotube already ships, so there is no host, no key
+and nothing to probe — it is bundled last in the source order and always
+available. The ISRC is searched first when the metadata provider supplied one,
+because it names one exact recording; otherwise it is title and artists. Audio
+tracks below 64 kbps are discarded.
 
 **Internet Archive** indexes items — whole albums and concerts — not songs, so
 searching for a track title finds nothing. The plugin searches by performer

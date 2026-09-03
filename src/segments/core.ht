@@ -83,14 +83,17 @@ Each track is routed to whichever public source can actually play it:
   ISRC so remasters and live versions are not confused with each other.
 - **the Internet Archive** — live recordings, public-domain material and
   studio albums other people have uploaded. No account, nothing to block, but
-  coverage is a lottery: a track plays only if someone put that album there.
+  coverage is a lottery: a track is there only if someone put it there.
+- **YouTube** — everything else. Not lossless (Opus or AAC), so it is tried
+  last, after both lossless sources have come up empty.
 
 ## If playback stops working
 
 Instances proxy Tidal with their own account, and an instance answering
 `Upstream API error` or `Token refresh failed` has had that account blocked.
-As of September 2026 every public one is in that state, so mainstream tracks
-play only when the Archive happens to hold them.
+As of September 2026 every public one is in that state, so a track plays
+losslessly only when the Archive happens to hold it — otherwise it falls back
+to YouTube, which is lossy but almost always has it.
 
 There is nothing to configure. The source list is a file in the repository
 that an hourly probe keeps current, so a source that comes back reaches you
