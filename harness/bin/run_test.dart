@@ -97,10 +97,6 @@ class FakeHifi extends FakeServer {
   final bool hasCatalogue;
   final bool streamsBlocked;
 
-  /// Overrides the catalogue a search answers with, for the case where an
-  /// instance finds a different recording that happens to share the title.
-  final List<Map<String, dynamic>>? catalogue;
-
   final Map<String, int> trackCalls = {};
 
   FakeHifi({
@@ -108,7 +104,6 @@ class FakeHifi extends FakeServer {
     this.busyResponses = 0,
     this.hasCatalogue = true,
     this.streamsBlocked = false,
-    this.catalogue,
   });
 
   static String btsManifest() {
@@ -134,8 +129,7 @@ class FakeHifi extends FakeServer {
         'version': '2.10',
         'data': {
           'limit': 20,
-          'items': catalogue ??
-              (hasCatalogue
+          'items': (hasCatalogue
               ? [
                   {
                     'id': 1550546,
@@ -362,17 +356,17 @@ Future<void> main(List<String> args) async {
           'thumbnail': 'https://i.ytimg.com/vi/FGBhQbmPwH8/hq.jpg',
         },
       ],
-      'Cars and Girls Cliff Richard': [
+      // What a blocked hifi-api match tops up with: the same recording,
+      // looked up by the match's own title and artist.
+      'One More Time Jocelyn Brown': [
         {
-          'id': 'ytcarsgirls',
-          'title': 'Cliff Richard - Cars and Girls',
-          'author': 'Cliff Richard',
+          'id': 'ytjocelyn',
+          'title': 'Jocelyn Brown - One More Time',
+          'author': 'Jocelyn Brown',
           'duration': 240000,
           'thumbnail': '',
         },
       ],
-      // What a blocked hifi-api match tops up with: the same recording,
-      // looked up by the match's own title and artist.
       'One More Time Daft Punk': [
         {
           'id': 'ytonemoretime',
@@ -772,46 +766,37 @@ Future<void> main(List<String> args) async {
       blockedStreams.map((s) => s['container']).toSet().contains('mp4'),
       'streams=$blockedStreams');
 
-  print('\na different artist with the same title is not this track');
-  // hifi-api searches the title and ignores the artist term: asking it for
-  // "Cars and Girls Cliff Richard" returns Prefab Sprout. rank() moved an
-  // ISRC-exact hit to the front but kept the rest, so a track whose ISRC is
-  // not in the results was answered with somebody else's song.
-  final wrongArtist = FakeHifi(catalogue: [
-    {
-      'id': 656737,
-      'title': 'Cars and Girls',
-      'duration': 265,
-      'isrc': 'GBBBN8800007',
-      'artist': {'name': 'Prefab Sprout'},
-      'artists': [
-        {'name': 'Prefab Sprout'}
-      ],
-      'album': {'title': 'From Langley Park To Memphis', 'cover': 'x'},
-    },
-  ]);
-  await wrongArtist.start();
+  print('\na title match credited to someone else is not the track');
+  // hifi-api takes the whole query as one string and weighs the title, not the
+  // artist: asking a live instance for "cars and girls cliff richard" returns
+  // Prefab Sprout, Groove Da Praia and The Dictators, and no Cliff Richard at
+  // all. Ranking put an ISRC-exact hit first but kept the rest, so a track
+  // whose ISRC was missing was answered with somebody else's recording.
+  final titleOnly = FakeHifi();
+  await titleOnly.start();
   storage.store.clear();
   store.memberSet(
       'cached',
-      await hetu.eval('[{"type": "hifi-api", "base": "${wrongArtist.base}"},'
+      await hetu.eval('[{"type": "hifi-api", "base": "${titleOnly.base}"},'
           '{"type": "youtube", "base": "https://youtube.com"}]'));
 
-  final otherArtist = await hetu.eval('''
-    { "name": "Cars and Girls", "isrc": "GBAAA0000001",
-      "artists": [{ "name": "Cliff Richard" }] }
+  // The instance only knows Daft Punk's recording; this is a different song
+  // that happens to share its name, and its ISRC is nowhere in the results.
+  final sameTitle = await hetu.eval('''
+    { "name": "One More Time", "isrc": "USAAA0000001",
+      "artists": [{ "name": "Jocelyn Brown" }] }
   ''');
-  final otherMatches = await audioSource
-      .invoke('matches', positionalArgs: [otherArtist]) as List;
+  final sameTitleMatches = await audioSource
+      .invoke('matches', positionalArgs: [sameTitle]) as List;
   check(
-      "somebody else's recording was not offered as the track",
-      otherMatches.every((m) => !m['id'].toString().startsWith('hifi-api:')),
-      'matches=$otherMatches');
+      "the instance's own recording was not offered as the track",
+      sameTitleMatches.every((m) => !m['id'].toString().startsWith('hifi-api:')),
+      'matches=$sameTitleMatches');
   check(
-      'the router fell through to a source that searches the artist too',
-      otherMatches.isNotEmpty &&
-          otherMatches.first['id'] == 'youtube:ytcarsgirls',
-      'matches=$otherMatches');
+      'the router fell through to a source that weighs the artist',
+      sameTitleMatches.isNotEmpty &&
+          sameTitleMatches.first['id'] == 'youtube:ytjocelyn',
+      'matches=$sameTitleMatches');
 
   print('\ncaching and fallbacks');
   // Fetch once for real so a cache exists to fall back to.
