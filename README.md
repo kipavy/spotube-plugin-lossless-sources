@@ -55,11 +55,13 @@ Then pick it as your audio source.
 
 Two other ways, if you prefer:
 
-- **From a URL** — paste the `plugin.smplug` link from
+- **From a URL** — paste this repository's URL,
+  `https://github.com/kipavy/spotube-plugin-lossless-sources`, into the text
+  field on that page and press the grey download button. Spotube resolves the
+  latest release itself.
+- **From a file** — download `plugin.smplug` from
   [Releases](https://github.com/kipavy/spotube-plugin-lossless-sources/releases)
-  into the text field on that page and press the grey download button.
-- **From a file** — download `plugin.smplug` and use the orange upload button
-  beside the same field.
+  and use the orange upload button beside the same field.
 
 > **If nothing plays at all, check your streaming format first.** Spotube picks
 > a container preset by index and then keeps only the streams whose container
