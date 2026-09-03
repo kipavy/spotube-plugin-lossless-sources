@@ -113,7 +113,8 @@ There is deliberately no settings field for this. Spotube's only way to show a
 plugin form is the `authentication` ability, which also puts a permanent
 "Plugin requires authentication" warning and a **Login** button on the plugin
 card — for a plugin whose whole point is that it asks you for nothing, that
-would be a lie on every install. Upstream issue pending.
+would be a lie on every install. Tracked upstream as
+[KRTirtho/spotube#3120](https://github.com/KRTirtho/spotube/issues/3120).
 
 ## How it works
 
