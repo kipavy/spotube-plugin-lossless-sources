@@ -301,6 +301,18 @@ Future<void> main(List<String> args) async {
           'thumbnail': 'https://i.ytimg.com/vi/FGBhQbmPwH8/hq.jpg',
         },
       ],
+      // The same recording on YouTube, found from an archive match's own
+      // title and creator, so a flac-only match can still be topped up with a
+      // container the selected preset can actually play.
+      'Scarlet Begonias Grateful Dead': [
+        {
+          'id': 'ytscarlet',
+          'title': 'Scarlet Begonias',
+          'author': 'Grateful Dead',
+          'duration': 674000,
+          'thumbnail': '',
+        },
+      ],
       // An ISRC YouTube has never indexed. The search is not empty -- it
       // never is -- it is simply unrelated, which is the case that used to
       // be played as if it were the track.
@@ -500,6 +512,21 @@ Future<void> main(List<String> args) async {
           '${archive.base}/download/gd1977-05-08/gd77-05-08d1t01%20Scarlet%20Begonias.flac',
       'streams=$archiveStreams');
 
+  check('the flac is still offered first, so lossless wins when it is asked for',
+      (archiveStreams as List).first['container'] == 'flac',
+      'streams=$archiveStreams');
+  // Spotube keeps only the streams whose container equals the selected
+  // preset's name and reduces over them, and reduce throws on an empty list.
+  // A flac-only match is therefore silently unplayable for anyone left on the
+  // default mp4 preset, and Spotube never retries the other matches.
+  final archiveContainers =
+      (archiveStreams as List).map((s) => s['container']).toSet();
+  check('a lossy container is offered too, so the mp4 preset has something',
+      archiveContainers.contains('mp4'), 'containers=$archiveContainers');
+  check('the topped-up stream is the same recording from youtube',
+      youtube.manifests.contains('ytscarlet'),
+      'manifests=${youtube.manifests}');
+
   print('\nfree-text search catches uploads the creator search misses');
   final looseArchive = FakeArchive(answerCreatorSearch: false);
   await looseArchive.start();
@@ -525,6 +552,7 @@ Future<void> main(List<String> args) async {
       await hetu.eval('[{"type": "archive", "base": "${looseArchive.base}"},'
           '{"type": "youtube", "base": "https://youtube.com"}]'));
 
+  final ytQueriesBefore = youtube.queries.length;
   final oneMoreTime = await hetu.eval('''
     { "name": "One More Time", "isrc": "GBDUW0000053",
       "artists": [{ "name": "Daft Punk" }] }
@@ -532,8 +560,10 @@ Future<void> main(List<String> args) async {
   final ytMatches =
       await audioSource.invoke('matches', positionalArgs: [oneMoreTime]) as List;
   check('youtube produced a match', ytMatches.isNotEmpty, 'matches=$ytMatches');
-  check('the isrc was searched first', youtube.queries.first == 'GBDUW0000053',
-      'queries=${youtube.queries}');
+  check(
+      'the isrc was searched first',
+      youtube.queries.sublist(ytQueriesBefore).first == 'GBDUW0000053',
+      'queries=${youtube.queries.sublist(ytQueriesBefore)}');
   final ytMatch = ytMatches.first;
   check('match is tagged as youtube', ytMatch['id'] == 'youtube:FGBhQbmPwH8',
       'match=$ytMatch');

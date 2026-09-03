@@ -181,7 +181,72 @@ class AudioSourceEndpoint {
     if (source == null) return Future.value([])
 
     return store.basesFor(type).then((bases) {
-      return source.streams(match, reference, bases)
+      return source.streams(match, reference, bases).then((found) {
+        return topUp(match, type, found)
+      })
+    })
+  }
+
+  /// Adds a lossy container to a match that can only offer lossless.
+  ///
+  /// Spotube keeps only the streams whose container equals the preset the
+  /// listener picked, then reduces over them -- and reduce throws on an empty
+  /// list rather than falling back. The Archive serves nothing but flac, so a
+  /// flac-only match plays nothing at all for anyone left on the default mp4
+  /// preset, and Spotube never retries the other matches: it asks for the
+  /// streams of the first one and stops.
+  ///
+  /// Looking the same recording up on YouTube and appending its streams keeps
+  /// every preset playable. The flac stays first, so lossless still wins the
+  /// moment it is the preset asked for.
+  fun topUp(match: Map, type: String, found: List) -> Future {
+    if (found == null) return Future.value([])
+    // YouTube is the source being topped up with; it cannot top up itself.
+    if (type == "youtube") return Future.value(found)
+
+    for (var stream in found) {
+      if (stream["container"] != "flac") return Future.value(found)
+    }
+
+    // A match object carries its artists as plain strings, not the maps a
+    // track arrives with, so the query is built here rather than through
+    // searchText.
+    var title = (match["title"] ?? "").toString()
+    if (title == "") return Future.value(found)
+
+    var names = []
+    if (match["artists"] != null) {
+      for (var artist in match["artists"]) {
+        var name = artist == null ? "" : artist.toString()
+        if (name != "") { names.add(name) }
+      }
+    }
+
+    var query = names.isEmpty ? title : "${title} ${names.join(", ")}"
+
+    var wanted = {
+      "name": title,
+      // Deliberately blank: the ISRC names the catalogue recording, and this
+      // is a lookup for whatever upload carries the same performance.
+      "isrc": "",
+    }.toJson()
+
+    return youtube.matches(wanted, query, []).then((alternatives) {
+      if (alternatives == null || alternatives.isEmpty) return found
+
+      var alternative = alternatives[0]
+      var text = alternative["id"].toString()
+      var cut = text.indexOf(ID_SEPARATOR)
+      var reference = cut > 0 ? text.substring(cut + 1) : text
+
+      return youtube.streams(alternative, reference, []).then((extra) {
+        if (extra == null || extra.isEmpty) return found
+
+        var all = []
+        for (var stream in found) { all.add(stream) }
+        for (var stream in extra) { all.add(stream) }
+        return all
+      })
     })
   }
 }
