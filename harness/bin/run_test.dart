@@ -205,11 +205,16 @@ class FakeArchive extends FakeServer {
   /// entirely different songs.
   final bool folderNamedAfterTrack;
 
+  /// An upload that is somebody else's performance of the track: the only
+  /// FLAC carries the song's name and "Cover".
+  final bool coverUpload;
+
   final List<String> queries = [];
 
   FakeArchive({
     this.answerCreatorSearch = true,
     this.folderNamedAfterTrack = false,
+    this.coverUpload = false,
   });
 
   @override
@@ -223,14 +228,32 @@ class FakeArchive extends FakeServer {
           ? []
           : [
               {
-                'identifier': folderNamedAfterTrack
-                    ? 'lionsinmyowngardena'
-                    : 'gd1977-05-08'
+                'identifier': coverUpload
+                    ? 'gala-freed-from-desire-vibegen-cover'
+                    : folderNamedAfterTrack
+                        ? 'lionsinmyowngardena'
+                        : 'gd1977-05-08'
               },
             ];
 
       request.response.write(jsonEncode({
         'response': {'numFound': docs.length, 'docs': docs},
+      }));
+      await request.response.close();
+      return;
+    }
+
+    if (request.uri.path ==
+        '/metadata/gala-freed-from-desire-vibegen-cover') {
+      request.response.write(jsonEncode({
+        'metadata': {'title': 'Freed From Desire', 'creator': 'Vibegen'},
+        'files': [
+          {
+            'name': 'Gala Freed from desire (Vibegen Cover).flac',
+            'title': 'Gala Freed from desire (Vibegen Cover)',
+            'length': '215.0',
+          },
+        ],
       }));
       await request.response.close();
       return;
@@ -765,6 +788,27 @@ Future<void> main(List<String> args) async {
       'what plays is a container the default preset can select',
       blockedStreams.map((s) => s['container']).toSet().contains('mp4'),
       'streams=$blockedStreams');
+
+  print('\nsomebody else covering the track is not the track');
+  // A real upload: searching the Archive for Gala's "Freed From Desire" finds
+  // gala-freed-from-desire-vibegen-cover, whose file carries the song's name.
+  // Matching on the name alone let it win the routing, and topping it up then
+  // searched YouTube for the cover's title -- so the listener got a stranger's
+  // performance instead of the record.
+  final coverOnly = FakeArchive(coverUpload: true);
+  await coverOnly.start();
+  storage.store.clear();
+  store.memberSet('cached',
+      await hetu.eval('[{"type": "archive", "base": "${coverOnly.base}"}]'));
+
+  final freedFromDesire = await hetu.eval('''
+    { "name": "Freed From Desire", "isrc": "ITA179700143",
+      "artists": [{ "name": "Gala" }] }
+  ''');
+  final coverMatches = await audioSource
+      .invoke('matches', positionalArgs: [freedFromDesire]) as List;
+  check('the cover was not offered as the track', coverMatches.isEmpty,
+      'matches=$coverMatches');
 
   print('\na title match credited to someone else is not the track');
   // hifi-api takes the whole query as one string and weighs the title, not the

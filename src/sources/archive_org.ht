@@ -9,6 +9,16 @@ var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
 
 /// Leading track numbers to strip off a file name, and what may separate them
 /// from the title: "01. Cars And Girls", "03 - Nero The Zero".
+/// Words that mark a file as somebody else's performance rather than the
+/// recording asked for. Matched whole, so "Discovery" is not read as a cover.
+///
+/// "live" is deliberately absent. The Archive is largely live recordings --
+/// that is most of what it uniquely has -- so excluding them would empty it.
+var FOREIGN_MARKERS = [
+  "cover", "covers", "karaoke", "tribute", "remix", "remixes",
+  "instrumental", "acapella", "nightcore", "mashup",
+]
+
 var DIGITS = "0123456789"
 var NUMBER_SEPARATORS = ". -_)"
 
@@ -101,6 +111,22 @@ class ArchiveOrgSource {
     return last.trim()
   }
 
+  /// Whether a name announces itself as a different performance.
+  ///
+  /// Compared word by word, and only when the track being asked for does not
+  /// carry the same word -- a request for a remix should still find one.
+  fun foreign(text: String, wanted: String) -> bool {
+    var words = text.split(" ")
+    for (var marker in FOREIGN_MARKERS) {
+      var present = false
+      for (var word in words) {
+        if (word == marker) present = true
+      }
+      if (present && !wanted.contains(marker)) return true
+    }
+    return false
+  }
+
   /// Quotes are the only thing that can break the query syntax.
   fun escape(value) -> String {
     if (value == null) return ""
@@ -172,7 +198,14 @@ class ArchiveOrgSource {
         // path would otherwise carry the folder's name into every comparison.
         var label = leaf(file["title"] ?? name)
         var fallback = leaf(name)
-        if (wanted != "" && !simplify(label).contains(wanted) && !simplify(fallback).contains(wanted)) continue
+        var simplified = simplify(label)
+        var simplifiedName = simplify(fallback)
+        if (wanted != "" && !simplified.contains(wanted) && !simplifiedName.contains(wanted)) continue
+
+        // Carrying the track's name is not enough: an upload of somebody
+        // else's cover carries it too, and the router has no second chance
+        // once a source has answered.
+        if (wanted != "" && (foreign(simplified, wanted) || foreign(simplifiedName, wanted))) continue
 
         found.add({
           "id": "archive:${identifier}|${name}",
