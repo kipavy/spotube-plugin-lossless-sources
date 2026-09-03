@@ -63,8 +63,22 @@ Future<void> main() async {
   plugin.memberGet('sources').memberSet('cached',
       await hetu.eval('[{"type": "archive", "base": "https://archive.org"}]'));
 
+  // Two shapes of request: a live recording, and a mainstream studio track.
+  final wanted = <Map<String, String>>[
+    {'name': 'Scarlet Begonias', 'artist': 'Grateful Dead'},
+    {'name': 'One More Time', 'artist': 'Daft Punk'},
+    {'name': 'Bohemian Rhapsody', 'artist': 'Queen'},
+  ];
+  for (final want in wanted) {
+    final t = await hetu.eval(
+        '{ "name": "${want['name']}", "isrc": "", "artists": [{ "name": "${want['artist']}" }] }');
+    final m = await audioSource.invoke('matches', positionalArgs: [t]) as List;
+    print('${want['artist']} - ${want['name']}: ${m.length} match(es)'
+        '${m.isEmpty ? '' : ' -> ${m.first['id']}'}');
+  }
+
   final track = await hetu.eval(
-      '{ "name": "Scarlet Begonias", "isrc": "", "artists": [{ "name": "Grateful Dead" }] }');
+      '{ "name": "One More Time", "isrc": "", "artists": [{ "name": "Daft Punk" }] }');
 
   final matches =
       await audioSource.invoke('matches', positionalArgs: [track]) as List;

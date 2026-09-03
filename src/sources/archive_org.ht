@@ -7,16 +7,17 @@ var HttpResponse = std.HttpResponse
 /// "Don't Want You No More" and "dont want you no more.flac" compare equal.
 var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
 
-/// How many search results to open. Each one costs a metadata request, and
-/// scanning stops at the first item that holds the track.
-var MAX_ITEMS = 5
+/// How many search results to open per strategy. Each one costs a metadata
+/// request, and scanning stops at the first item that holds the track.
+var MAX_ITEMS = 6
 
 /// The Internet Archive, which needs no account, no key and no instance.
 ///
-/// It will never match most of a Spotify library: what is here is live
-/// recordings and public-domain material, not studio releases. It earns its
-/// place by being the one source that cannot be blocked -- when every proxy is
-/// down, this still answers, and the FLAC it serves is a direct file URL.
+/// Coverage is uneven rather than absent: live recordings and public-domain
+/// material are here in depth, and a fair number of studio albums have been
+/// uploaded by users too -- those can disappear again without notice. It earns
+/// its place by being the one source that cannot be blocked: when every proxy
+/// is down, this still answers, and the FLAC it serves is a direct file URL.
 class ArchiveOrgSource {
   var client: HttpClient
 
@@ -54,30 +55,39 @@ class ArchiveOrgSource {
     return value.toString().replaceAll("\"", "")
   }
 
-  /// Searches by performer, never by track title.
+  fun artistOf(track: Map) -> String {
+    if (track["artists"] == null || track["artists"].isEmpty) return ""
+    var first = track["artists"][0]
+    // Not `is Map`: a Hetu struct is not a Map, and the failed test would put
+    // the whole object into the query.
+    var name = first == null ? null : first["name"]
+    return escape(name ?? first)
+  }
+
+  /// Primary search: the performer.
   ///
-  /// The Archive indexes items -- whole concerts -- so a title search looks
-  /// for a show called "Scarlet Begonias" and finds nothing. Individual songs
-  /// exist only inside an item's file list, which is why the match is made by
-  /// opening the most-downloaded shows and reading their files.
-  fun searchQuery(track: Map) -> String {
-    var artist = ""
-    if (track["artists"] != null && track["artists"].isNotEmpty) {
-      var first = track["artists"][0]
-      // Not `is Map`: a Hetu struct is not a Map, and the failed test would
-      // put the whole object into the query.
-      var name = first == null ? null : first["name"]
-      artist = escape(name ?? first)
-    }
+  /// The Archive indexes items -- whole albums and concerts -- so searching by
+  /// track title looks for an item called "Scarlet Begonias" and finds
+  /// nothing. Individual songs exist only inside an item's file list, which is
+  /// why the match is made by opening items and reading their files.
+  fun creatorQuery(track: Map) -> String {
+    var artist = artistOf(track)
+    if (artist == "") return ""
+    return "creator:(\"${artist}\") AND mediatype:(audio) AND format:(Flac)"
+  }
 
-    if (artist != "") {
-      return "creator:(\"${artist}\") AND mediatype:(audio) AND format:(Flac)"
-    }
-
-    // Without an artist there is nothing better than the item title, which at
-    // least matches compilations and single-work uploads.
+  /// Fallback search: free text over everything the item says about itself.
+  ///
+  /// Uploads are inconsistent -- an album can name the artist in its title, or
+  /// its description, and leave `creator` as the person who uploaded it. This
+  /// catches those; it is second because it also matches far more noise.
+  fun textQuery(track: Map) -> String {
+    var artist = artistOf(track)
     var name = escape(track["name"] ?? "")
-    return "title:(\"${name}\") AND mediatype:(audio) AND format:(Flac)"
+    if (artist == "" && name == "") return ""
+
+    var terms = artist == "" ? "\"${name}\"" : "\"${artist}\" AND \"${name}\""
+    return "${terms} AND mediatype:(audio) AND format:(Flac)"
   }
 
   /// Walks the search hits one item at a time, opening each item's file list
@@ -158,19 +168,17 @@ class ArchiveOrgSource {
     return int.parse(whole)
   }
 
-  fun matches(track: Map, query: String, bases: List) -> Future {
-    if (bases == null || bases.isEmpty) return Future.value([])
-    if (track == null) return Future.value([])
-
-    var base = bases[0]
+  /// Runs one search and returns the item identifiers it found.
+  fun searchItems(base: String, query: String) -> Future {
+    if (query == "") return Future.value([])
 
     return client.get_req(
       "${base}/advancedsearch.php",
       queryParameters: {
-        "q": searchQuery(track),
+        "q": query,
         "fl[]": "identifier",
-        // Most-downloaded first: a famous song is likeliest to appear in the
-        // shows people actually listen to.
+        // Most-downloaded first: a wanted track is likeliest to be in the
+        // items people actually listen to.
         "sort[]": "downloads desc",
         "rows": MAX_ITEMS,
         "output": "json",
@@ -188,8 +196,26 @@ class ArchiveOrgSource {
       for (var doc in docs) {
         if (doc["identifier"] != null) identifiers.add(doc["identifier"])
       }
+      return identifiers
+    })
+  }
 
-      return inspect(0, identifiers, track, base)
+  /// Tries the performer search first and falls back to free text, because an
+  /// upload that leaves `creator` as the uploader is only findable that way.
+  fun matches(track: Map, query: String, bases: List) -> Future {
+    if (bases == null || bases.isEmpty) return Future.value([])
+    if (track == null) return Future.value([])
+
+    var base = bases[0]
+
+    return searchItems(base, creatorQuery(track)).then((identifiers) {
+      return inspect(0, identifiers, track, base).then((found) {
+        if (found != null && found.isNotEmpty) return found
+
+        return searchItems(base, textQuery(track)).then((fallback) {
+          return inspect(0, fallback, track, base)
+        })
+      })
     })
   }
 

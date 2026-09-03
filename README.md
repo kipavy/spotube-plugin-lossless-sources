@@ -13,14 +13,20 @@ screen. Install it, select it as your audio source, done.
 | Source | What is in it | State today |
 |--------|---------------|-------------|
 | **hifi-api instances** | Tidal — the full mainstream catalogue, in FLAC or AAC 320 depending on the instance | 🔴 **every public instance is blocked** |
-| **Internet Archive** | Live concert recordings and public-domain material, in FLAC | 🟢 working, and cannot be blocked |
+| **Internet Archive** | Live recordings, public-domain material, and studio albums people have uploaded — all in FLAC | 🟢 working, and cannot be blocked |
 
 So, concretely, as of **September 2026**:
 
 - A Grateful Dead show, a jazz session, an old public-domain record → **plays**,
-  in lossless FLAC, from the Internet Archive.
-- Today's Top 40, or any studio album → **does not play**. The plugin will
-  search, find nothing it can stream, and Spotube will report no source.
+  in lossless FLAC.
+- A mainstream studio track → **plays if someone uploaded that album to the
+  Archive**, which is true more often than you would expect. Verified end to
+  end: Daft Punk's *One More Time* resolves to
+  `archive.org/download/discovery-daft-punk-2001-flac/01 One More Time.flac`
+  and streams as `audio/flac`. Queen and the Grateful Dead resolve too.
+- Anything nobody uploaded → **does not play**. Coverage is a lottery, not a
+  catalogue: there is no guarantee for any given track, and user uploads can be
+  taken down again without notice.
 
 That is not a bug in this plugin, and reinstalling will not fix it. Every
 public hifi-api instance signs into Tidal with its own shared account, and
@@ -89,15 +95,18 @@ because they are not obvious from the API:
   matters for remasters, radio edits and live versions, which otherwise look
   identical by name.
 
-**Internet Archive** indexes items — whole concerts — not songs, so a title
-search finds nothing. The plugin searches by performer, opens the
-most-downloaded items and reads their file lists for a FLAC whose title matches
-the track. The URL it returns is the file itself: nothing to resolve, nothing
-to expire, and no account that can be blocked.
+**Internet Archive** indexes items — whole albums and concerts — not songs, so
+searching for a track title finds nothing. The plugin searches by performer
+first, opens the most-downloaded items and reads their file lists for a FLAC
+whose title or filename matches the track. If that finds nothing it retries as
+free text over artist and title, which catches uploads that left `creator` as
+the uploader's name. The URL it returns is the file itself: nothing to resolve,
+nothing to expire, and no account that can be blocked.
 
 ## Quality
 
-From the Archive: whatever the uploader posted, usually 16-bit/44.1kHz FLAC.
+From the Archive: whatever the uploader posted, usually 16-bit/44.1kHz FLAC —
+vinyl rips and 24-bit uploads exist too, and are reported as 16/44.1.
 
 From a hifi-api instance: whatever tier that instance's Tidal account allows. A
 lower-tier account returns AAC 320 even when lossless is requested. The plugin

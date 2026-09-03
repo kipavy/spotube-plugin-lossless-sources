@@ -179,17 +179,30 @@ class FakeHifi extends FakeServer {
 
 /// An Internet Archive mirror: a search that returns one item, and an item
 /// whose file list holds a matching FLAC among files that must be ignored.
+///
+/// `answerCreatorSearch: false` makes it behave like an upload that left
+/// `creator` as the uploader -- findable by free text only.
 class FakeArchive extends FakeServer {
+  final bool answerCreatorSearch;
+  final List<String> queries = [];
+
+  FakeArchive({this.answerCreatorSearch = true});
+
   @override
   Future<void> handle(HttpRequest request) async {
     if (request.uri.path == '/advancedsearch.php') {
+      final query = request.uri.queryParameters['q'] ?? '';
+      queries.add(query);
+
+      final isCreatorSearch = query.startsWith('creator:');
+      final docs = (isCreatorSearch && !answerCreatorSearch)
+          ? []
+          : [
+              {'identifier': 'gd1977-05-08'},
+            ];
+
       request.response.write(jsonEncode({
-        'response': {
-          'numFound': 1,
-          'docs': [
-            {'identifier': 'gd1977-05-08'},
-          ],
-        },
+        'response': {'numFound': docs.length, 'docs': docs},
       }));
       await request.response.close();
       return;
@@ -432,6 +445,25 @@ Future<void> main(List<String> args) async {
           '${archive.base}/download/gd1977-05-08/gd77-05-08d1t01%20Scarlet%20Begonias.flac',
       'streams=$archiveStreams');
 
+  print('\nfree-text search catches uploads the creator search misses');
+  final looseArchive = FakeArchive(answerCreatorSearch: false);
+  await looseArchive.start();
+  store.memberSet(
+      'cached',
+      await hetu.eval('[{"type": "archive", "base": "${looseArchive.base}"}]'));
+  final looseMatches =
+      await audioSource.invoke('matches', positionalArgs: [live77]) as List;
+  check('a match was still found', looseMatches.isNotEmpty,
+      'matches=$looseMatches');
+  check('the creator search ran first',
+      looseArchive.queries.first.startsWith('creator:'),
+      'queries=${looseArchive.queries}');
+  check(
+      'the fallback searched artist and title as free text',
+      looseArchive.queries.length == 2 &&
+          looseArchive.queries[1].startsWith('"Grateful Dead" AND "Scarlet Begonias"'),
+      'queries=${looseArchive.queries}');
+
   print('\ncaching and fallbacks');
   // Fetch once for real so a cache exists to fall back to.
   store.memberSet('cached', null);
@@ -470,6 +502,7 @@ Future<void> main(List<String> args) async {
   await live.stop();
   await barren.stop();
   await archive.stop();
+  await looseArchive.stop();
 
   print('');
   if (failures.isEmpty) {
