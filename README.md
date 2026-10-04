@@ -69,6 +69,16 @@ Two other ways, if you prefer:
 > `mp4` is listed first here because that is what the Tidal instances return.
 > Settings → Playback → streaming format/quality.
 
+> **If it still plays nothing, switch Spotube's YouTube engine.** While the
+> Tidal instances are blocked, most mainstream tracks reach you through
+> YouTube, and this plugin does not fetch YouTube itself — it asks the engine
+> Spotube ships. YouTube breaks those engines one at a time, so one can fail
+> while another still works. If the official *YouTube Audio* plugin plays
+> nothing either, that is the cause: Settings → Playback → YouTube Engine, and
+> pick a different one — NewPipe if YouTubeExplode is selected, and the other
+> way round. On desktop, yt-dlp is the one you can update yourself
+> (`yt-dlp -U`), so it recovers first.
+
 ## Where the source list comes from
 
 Nothing to configure and nothing to log into. On startup the plugin reads
