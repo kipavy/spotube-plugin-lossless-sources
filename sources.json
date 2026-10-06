@@ -1,7 +1,12 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-09-03T17:49:21Z",
-  "sources": [],
+  "updated": "2026-10-06T14:43:34Z",
+  "sources": [
+    {
+      "type": "monochrome",
+      "base": "https://tracks.monochrome.st"
+    }
+  ],
   "candidates": [
     {
       "type": "monochrome",
@@ -46,12 +51,61 @@
     {
       "type": "hifi-api",
       "base": "https://hund.qqdl.site"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://triton.squid.wtf"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://hifi-one.spotisaver.net"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://hifi-two.spotisaver.net"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://hifi.geeked.wtf"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://hfapi.dyamuh.dev"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://hfapi.aluratech.org"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://api.studentsneed.help"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://tidal-api.binimum.org"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://frankfurt-2.monochrome.tf"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://eu-central.monochrome.tf"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://us-west.monochrome.tf"
     }
   ],
   "status": {
+    "monochrome https://tracks.monochrome.st": {
+      "search": "ok",
+      "stream": "ok flac",
+      "playable": true
+    },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
-      "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
-      "stream": null,
+      "search": "ok",
+      "stream": "503 All accounts are inactive, rate-limited, or have expired tokens",
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
@@ -60,7 +114,7 @@
       "playable": false
     },
     "hifi-api https://api.monochrome.tf": {
-      "search": "503 <!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"U",
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
       "stream": null,
       "playable": false
     },
@@ -75,31 +129,86 @@
       "playable": false
     },
     "hifi-api https://wolf.qqdl.site": {
-      "search": "-1 TimeoutError: The read operation timed out",
+      "search": "-1 URLError: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING]",
       "stream": null,
       "playable": false
     },
     "hifi-api https://maus.qqdl.site": {
-      "search": "-1 TimeoutError: The read operation timed out",
+      "search": "-1 URLError: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING]",
       "stream": null,
       "playable": false
     },
     "hifi-api https://vogel.qqdl.site": {
-      "search": "500 <html>\r\n<head><title>500 Internal Server Error</title></head",
+      "search": "-1 URLError: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING]",
       "stream": null,
       "playable": false
     },
     "hifi-api https://katze.qqdl.site": {
-      "search": "500 <html>\r\n<head><title>500 Internal Server Error</title></head",
+      "search": "-1 URLError: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING]",
       "stream": null,
       "playable": false
     },
     "hifi-api https://hund.qqdl.site": {
-      "search": "500 <html>\r\n<head><title>500 Internal Server Error</title></head",
+      "search": "-1 URLError: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING]",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://triton.squid.wtf": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://hifi-one.spotisaver.net": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://hifi-two.spotisaver.net": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://hifi.geeked.wtf": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://hfapi.dyamuh.dev": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://hfapi.aluratech.org": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://api.studentsneed.help": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://tidal-api.binimum.org": {
+      "search": "-1 URLError: <urlopen error [Errno -5] No address associated wi",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://frankfurt-2.monochrome.tf": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://eu-central.monochrome.tf": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://us-west.monochrome.tf": {
+      "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
       "stream": null,
       "playable": false
     }
   },
-  "playable_count": 0,
+  "playable_count": 1,
   "announced_recovery": false
 }
