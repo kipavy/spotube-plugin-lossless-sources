@@ -18,6 +18,10 @@ var ID_SEPARATOR = ":"
 /// matches it has already resolved, so those still arrive here.
 var LEGACY_SOURCE = "hifi-api"
 
+/// How far a match's length may stray from the track's before it counts as
+/// another version: 15 seconds, or a tenth of the track when that is more.
+var LENGTH_SLACK_MS = 15000
+
 /// Routes a track to whichever source can actually play it.
 ///
 /// Sources are tried in the order the published list gives them and the first
@@ -138,9 +142,66 @@ class AudioSourceEndpoint {
     if (source == null) return askFrom(index + 1, groups, track, query)
 
     return source.matches(track, query, group["bases"]).then((found) {
-      if (found != null && found.isNotEmpty) return found
+      var fitting = byLength(found, track, group["type"] == "youtube")
+      if (fitting.isNotEmpty) return fitting
       return askFrom(index + 1, groups, track, query)
     })
+  }
+
+  /// Whether a match runs about as long as the track asked for.
+  ///
+  /// Every source returns other versions under the same name and the same
+  /// credit -- Soft Cell's "Tainted Love" is 2:33 on the album and 8:55 as the
+  /// club mix -- and only the length tells them apart. A match carrying the
+  /// track's own ISRC is the recording, and catalogues disagree on its length
+  /// by a second or two, so it fails only when it is off by a factor of two,
+  /// which means a catalogue error. Either length missing passes: there is
+  /// nothing to compare.
+  fun sameLength(match: Map, wanted: int, isrc: String) -> bool {
+    var actual = match["duration"] ?? 0
+    if (wanted <= 0 || actual <= 0) return true
+
+    var candidate = match["isrc"]
+    if (isrc != "" && candidate != null && candidate.toString().toUpperCase() == isrc) {
+      return actual < wanted * 2 && actual * 2 > wanted
+    }
+
+    var gap = actual - wanted
+    if (gap < 0) gap = -gap
+
+    var slack = wanted / 10
+    if (slack < LENGTH_SLACK_MS) slack = LENGTH_SLACK_MS
+    return gap <= slack
+  }
+
+  /// Keeps the matches of the right length, in the order the source ranked
+  /// them.
+  ///
+  /// A lossless source that only has the wrong version is skipped, so the
+  /// router moves on. YouTube is the exception: it is the last resort, and its
+  /// title search often finds the official video, intro and outro included,
+  /// so a wrong length there only moves a match down rather than dropping it
+  /// -- a slightly long video beats silence.
+  fun byLength(found, track: Map, lastResort: bool) -> List {
+    if (found == null || found.isEmpty) return []
+
+    var wanted = track["durationMs"] ?? 0
+    var isrc = (track["isrc"] ?? "").toString().toUpperCase()
+
+    var kept = []
+    var rest = []
+    for (var match in found) {
+      if (sameLength(match, wanted, isrc)) {
+        kept.add(match)
+      } else {
+        rest.add(match)
+      }
+    }
+
+    if (lastResort) {
+      for (var match in rest) { kept.add(match) }
+    }
+    return kept
   }
 
   /// Find matching audio sources for a given track. The first match is

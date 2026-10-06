@@ -144,6 +144,7 @@ would be a lie on every install. Tracked upstream as
 | Step | Behaviour |
 |------|-----------|
 | `matches()` | Asks each source in list order, stops at the first with results |
+| Length check | A match more than 15 s or 10 % off the track's length is another version (extended mix, live take) and is skipped, so the next source is asked. A match with the track's own ISRC fails only when it is off by a factor of two. On YouTube, the last resort, a wrong length moves the match down instead of dropping it |
 | `streams()` | Reads the source prefix off the match id and hands it back to that source |
 | Failover | Within a source, hosts are tried in order; a sleeping or blocked one falls through to the next |
 | Lossless-only match | The same recording from YouTube is appended, so every container preset has something to play |
