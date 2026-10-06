@@ -8,6 +8,15 @@ stream this?* — and answers it from public sources.
 **It asks you for nothing.** No account, no login, no API key, no settings
 screen. Install it, select it as your audio source, done.
 
+> [!WARNING]
+> **You will not hear lossless until you switch Spotube's streaming format to
+> `flac`:** Settings → Playback → streaming format → **`flac`**.
+>
+> Spotube defaults to `mp4`, and on `mp4` every track plays from YouTube
+> (shown as 320 kbps) even when FLAC is available. If nothing plays at all on
+> `mp4`, that is Spotube's YouTube engine failing — switching to `flac` fixes
+> it for every track a lossless source has. [Why](#install)
+
 ## What it can actually play, honestly
 
 | Source | What is in it | State today |
@@ -62,12 +71,13 @@ Two other ways, if you prefer:
   [Releases](https://github.com/kipavy/spotube-plugin-lossless-sources/releases)
   and use the orange upload button beside the same field.
 
-> **For lossless, set the streaming format to `flac`.** Spotube picks a
-> container preset by index and then keeps only the streams whose container
-> matches it, with no fallback. `mp4` is listed first so a fresh install
-> always plays something — every lossless match is also offered as the same
-> recording from YouTube in `mp4` — but on that preset you get the YouTube
-> copy. Settings → Playback → streaming format/quality.
+> **Then set the streaming format to `flac`** — see the warning at the top.
+> Why it is needed: Spotube picks a container preset by index and then keeps
+> only the streams whose container matches it, with no fallback. `mp4` is
+> listed first so a fresh install always plays something — every lossless
+> match is also offered as the same recording from YouTube in `mp4` — but on
+> that preset you get the YouTube copy, and Spotube labels it 320 kbps.
+> Settings → Playback → streaming format/quality.
 
 > **If nothing plays at all, switch Spotube's YouTube engine.** Every track
 > that no lossless source has, and every track on the `mp4` preset, reaches
