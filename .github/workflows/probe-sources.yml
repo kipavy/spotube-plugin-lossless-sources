@@ -38,7 +38,11 @@ jobs:
 
           # Only the timestamp moving is not worth a commit; it would push an
           # empty change every hour forever.
-          if [ -z "$(git diff -U0 -- sources.json | grep -E '^\+' | grep -v '^\+\+\+' | grep -v '"updated"')" ]; then
+          #
+          # -E on the +++ filter matters: in grep's basic syntax `\+` means
+          # "one or more", so '^\+\+\+' matched every line, every real change
+          # was read as a timestamp move, and nothing was ever published.
+          if [ -z "$(git diff -U0 -- sources.json | grep -E '^\+' | grep -vE '^\+\+\+' | grep -v '"updated"')" ]; then
             git checkout -- sources.json
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "only the timestamp moved"
