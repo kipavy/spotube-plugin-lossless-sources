@@ -1,13 +1,12 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
   "updated": "2026-09-03T17:49:21Z",
-  "sources": [
-    {
-      "type": "archive",
-      "base": "https://archive.org"
-    }
-  ],
+  "sources": [],
   "candidates": [
+    {
+      "type": "monochrome",
+      "base": "https://tracks.monochrome.st"
+    },
     {
       "type": "hifi-api",
       "base": "https://hifi-api-w9y8.onrender.com"
@@ -47,10 +46,6 @@
     {
       "type": "hifi-api",
       "base": "https://hund.qqdl.site"
-    },
-    {
-      "type": "archive",
-      "base": "https://archive.org"
     }
   ],
   "status": {
@@ -103,13 +98,8 @@
       "search": "500 <html>\r\n<head><title>500 Internal Server Error</title></head",
       "stream": null,
       "playable": false
-    },
-    "archive https://archive.org": {
-      "search": "ok",
-      "stream": "ok flac (otherbrothers2026-05-25)",
-      "playable": true
     }
   },
-  "playable_count": 1,
+  "playable_count": 0,
   "announced_recovery": false
 }

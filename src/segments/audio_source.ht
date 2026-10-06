@@ -2,7 +2,7 @@ import "module:std" as std
 
 import { SourceStore } from './sources.ht'
 import { HifiApiSource } from '../sources/hifi_api.ht'
-import { ArchiveOrgSource } from '../sources/archive_org.ht'
+import { MonochromeSource } from '../sources/monochrome.ht'
 import { YouTubeSource } from '../sources/youtube.ht'
 
 var HttpClient = std.HttpClient
@@ -21,26 +21,26 @@ var LEGACY_SOURCE = "hifi-api"
 /// Routes a track to whichever source can actually play it.
 ///
 /// Sources are tried in the order the published list gives them and the first
-/// one with a match wins, so the list is also the preference order: proxies
-/// that carry the mainstream catalogue first, the Archive last as the one that
-/// cannot be blocked.
+/// one with a match wins, so the list is also the preference order: the
+/// lossless sources that carry the mainstream catalogue first, YouTube last as
+/// the lossy one that almost always has the track.
 class AudioSourceEndpoint {
   var client: HttpClient
   var store: SourceStore
 
   var hifiApi: HifiApiSource
-  var archive: ArchiveOrgSource
+  var monochrome: MonochromeSource
   var youtube: YouTubeSource
 
   construct (this.client, this.store) {
     hifiApi = HifiApiSource(client)
-    archive = ArchiveOrgSource(client)
+    monochrome = MonochromeSource(client)
     youtube = YouTubeSource()
   }
 
   fun sourceFor(type) {
     if (type == "hifi-api") return hifiApi
-    if (type == "archive") return archive
+    if (type == "monochrome") return monochrome
     if (type == "youtube") return youtube
     // An unknown type in the published list is skipped rather than fatal, so
     // a new source can be listed before every installed plugin understands it.
@@ -177,8 +177,12 @@ class AudioSourceEndpoint {
     var type = cut > 0 ? text.substring(0, cut) : LEGACY_SOURCE
     var reference = cut > 0 ? text.substring(cut + 1) : text
 
+    // A match from a source this version no longer has -- Spotube keeps the
+    // "archive:" matches resolved before the Internet Archive was dropped --
+    // is played from YouTube by its title and artists, rather than not at all:
+    // Spotube asks for the streams of the match it holds and never re-matches.
     var source = sourceFor(type)
-    if (source == null) return Future.value([])
+    if (source == null) return topUp(match, type, [])
 
     return store.basesFor(type).then((bases) {
       return source.streams(match, reference, bases).then((found) {
@@ -191,7 +195,7 @@ class AudioSourceEndpoint {
   ///
   /// Spotube keeps only the streams whose container equals the preset the
   /// listener picked, then reduces over them -- and reduce throws on an empty
-  /// list rather than falling back. The Archive serves nothing but flac, so a
+  /// list rather than falling back. Monochrome serves nothing but flac, so a
   /// flac-only match plays nothing at all for anyone left on the default mp4
   /// preset, and Spotube never retries the other matches: it asks for the
   /// streams of the first one and stops.

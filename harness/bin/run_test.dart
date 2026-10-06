@@ -192,170 +192,84 @@ class FakeHifi extends FakeServer {
   }
 }
 
-/// An Internet Archive mirror: a search that returns one item, and an item
-/// whose file list holds a matching FLAC among files that must be ignored.
-///
-/// `answerCreatorSearch: false` makes it behave like an upload that left
-/// `creator` as the uploader -- findable by free text only.
-class FakeArchive extends FakeServer {
-  final bool answerCreatorSearch;
+/// Monochrome's catalogue API. The search answers a cover first and the
+/// original second, the way the real one answers "weird fishes" with the
+/// Noordpool Orchestra beside Radiohead. `transientFailures` makes the file
+/// answer Cloudflare's 521 that many times before serving it.
+class FakeMonochrome extends FakeServer {
+  final int transientFailures;
+  final bool alive;
 
-  /// A real shape from archive.org: the upload is a folder named after its
-  /// lead single, every file's `title` is its full path, and the siblings are
-  /// entirely different songs.
-  final bool folderNamedAfterTrack;
+  /// Bytes the file claims to have. 40 MB over 320 s averages about 1 Mbps,
+  /// which only a 16-bit file can do.
+  final int fileSize;
 
-  /// An upload that is somebody else's performance of the track: the only
-  /// FLAC carries the song's name and "Cover".
-  final bool coverUpload;
+  int fileCalls = 0;
 
-  /// A real shape from archive.org: another band's bar gig whose setlist, in
-  /// the description, says "The Final Countdown [Europe cover, impromptu]".
-  /// The free-text search finds it on that line, and the FLAC carries the
-  /// song's name with nothing marking it as a cover.
-  final bool otherBandsGig;
-
-  /// A real shape from archive.org: a 1994 club compilation whose
-  /// "04. Soft Cell - Tainted Love.flac" is the 8:55 extended mix, credited
-  /// to the right artist under the right name.
-  final bool clubMix;
-
-  final List<String> queries = [];
-
-  FakeArchive({
-    this.answerCreatorSearch = true,
-    this.folderNamedAfterTrack = false,
-    this.coverUpload = false,
-    this.otherBandsGig = false,
-    this.clubMix = false,
+  FakeMonochrome({
+    this.transientFailures = 0,
+    this.alive = true,
+    this.fileSize = 40000000,
   });
 
   @override
   Future<void> handle(HttpRequest request) async {
-    if (request.uri.path == '/advancedsearch.php') {
-      final query = request.uri.queryParameters['q'] ?? '';
-      queries.add(query);
+    if (!alive) {
+      request.response.statusCode = 521;
+      await request.response.close();
+      return;
+    }
 
-      final isCreatorSearch = query.startsWith('creator:');
-      final docs = (isCreatorSearch && !answerCreatorSearch)
-          ? []
-          : [
-              {
-                'identifier': coverUpload
-                    ? 'gala-freed-from-desire-vibegen-cover'
-                    : otherBandsGig
-                        ? '20180602ttglbg'
-                        : clubMix
-                        ? 'va-culture-dance-vol.-4'
-                        : folderNamedAfterTrack
-                        ? 'lionsinmyowngardena'
-                        : 'gd1977-05-08'
-              },
-            ];
-
+    if (request.uri.path == '/search/tracks') {
       request.response.write(jsonEncode({
-        'response': {'numFound': docs.length, 'docs': docs},
+        'tracks': [
+          {
+            'id': '900',
+            'title': 'One More Time',
+            'artistNames': ['Lounge Cover Band'],
+            'artwork': '',
+            'duration': 250000,
+            'isrc': 'XXAAA0000001',
+            'playable': true,
+          },
+          {
+            'id': '901',
+            'title': 'One More Time',
+            'artistNames': ['Somebody Else'],
+            'artwork': '',
+            'duration': 300000,
+            'isrc': 'XXAAA0000002',
+            'playable': false,
+          },
+          {
+            'id': '155102871061270528',
+            'title': 'One More Time',
+            'artistNames': ['Daft Punk'],
+            'artwork': 'https://tracks.example/cover.jpg',
+            'duration': 320357,
+            'isrc': 'GBDUW0000053',
+            'playable': true,
+          },
+        ],
+        'releases': [],
+        'artists': [],
       }));
       await request.response.close();
       return;
     }
 
-    if (request.uri.path ==
-        '/metadata/gala-freed-from-desire-vibegen-cover') {
-      request.response.write(jsonEncode({
-        'metadata': {'title': 'Freed From Desire', 'creator': 'Vibegen'},
-        'files': [
-          {
-            'name': 'Gala Freed from desire (Vibegen Cover).flac',
-            'title': 'Gala Freed from desire (Vibegen Cover)',
-            'length': '215.0',
-          },
-        ],
-      }));
-      await request.response.close();
-      return;
-    }
-
-    if (request.uri.path == '/metadata/va-culture-dance-vol.-4') {
-      request.response.write(jsonEncode({
-        'metadata': {
-          'title': 'VA Culture Dance Vol. 4 (Special Club) (1994)',
-        },
-        'files': [
-          {
-            'name': '04. Soft Cell - Tainted Love.flac',
-            'length': '534.91',
-          },
-        ],
-      }));
-      await request.response.close();
-      return;
-    }
-
-    if (request.uri.path == '/metadata/20180602ttglbg') {
-      request.response.write(jsonEncode({
-        'metadata': {
-          'title': "Thanks to Gravity Live at Libby's Bar & Grill on 2018-06-02",
-          'creator': 'Thanks to Gravity',
-          'description': '04 The Final Countdown [Europe cover, impromptu]',
-        },
-        'files': [
-          {
-            'name': "2018-06-02 Thanks to Gravity - Libby's Bar & Grill/04 The Final Countdown.flac",
-            'title': 'The Final Countdown',
-            'length': '127.88',
-          },
-        ],
-      }));
-      await request.response.close();
-      return;
-    }
-
-    if (request.uri.path == '/metadata/lionsinmyowngardena') {
-      request.response.write(jsonEncode({
-        'metadata': {
-          'title': 'Prefab Sprout Singles',
-          'creator': 'Prefab Sprout',
-        },
-        'files': [
-          {
-            'name': "1988 - 1 - Cars And Girls [+]/1. UK 7''/01. Cars And Girls.flac",
-            'title': "1988 - 1 - Cars And Girls [+]/1. UK 7''/01. Cars And Girls.flac",
-            'length': '266.0',
-          },
-          {
-            'name': "1988 - 1 - Cars And Girls [+]/1. UK 7''/02. Vendetta.flac",
-            'title': "1988 - 1 - Cars And Girls [+]/1. UK 7''/02. Vendetta.flac",
-            'length': '215.0',
-          },
-          {
-            'name': "1988 - 1 - Cars And Girls [+]/2. UK 12''/03. Nero The Zero.flac",
-            'title': "1988 - 1 - Cars And Girls [+]/2. UK 12''/03. Nero The Zero.flac",
-            'length': '240.0',
-          },
-        ],
-      }));
-      await request.response.close();
-      return;
-    }
-
-    if (request.uri.path == '/metadata/gd1977-05-08') {
-      request.response.write(jsonEncode({
-        'metadata': {
-          'title': 'Barton Hall 1977',
-          'creator': 'Grateful Dead',
-        },
-        'files': [
-          {'name': 'cover.jpg', 'title': 'Cover'},
-          {'name': 'gd77-05-08d1t01.mp3', 'title': 'Scarlet Begonias'},
-          {
-            'name': 'gd77-05-08d1t01 Scarlet Begonias.flac',
-            'title': 'Scarlet Begonias',
-            'length': '674.5',
-          },
-          {'name': 'gd77-05-08d1t02.flac', 'title': 'Fire On The Mountain'},
-        ],
-      }));
+    if (request.uri.path.startsWith('/track/')) {
+      fileCalls += 1;
+      if (fileCalls <= transientFailures) {
+        request.response.statusCode = 521;
+        request.response.headers.contentType = ContentType.html;
+        await request.response.close();
+        return;
+      }
+      request.response.headers.contentType =
+          ContentType('application', 'octet-stream');
+      request.response.contentLength = fileSize;
+      // A HEAD sends no body; nothing else is asked of this server.
       await request.response.close();
       return;
     }
@@ -395,10 +309,8 @@ Future<void> main(List<String> args) async {
 
   final dead = FakeHifi(alive: false);
   final live = FakeHifi(busyResponses: 2);
-  final archive = FakeArchive();
   await dead.start();
   await live.start();
-  await archive.start();
 
   final storage = MemoryLocalstorage();
 
@@ -412,7 +324,6 @@ Future<void> main(List<String> args) async {
           {'type': 'hifi-api', 'base': live.base},
           {'type': 'hifi-api', 'base': 'not-a-url'},
           {'type': 'some-future-source', 'base': 'https://unknown.example'},
-          {'type': 'archive', 'base': archive.base},
         ],
       };
 
@@ -448,18 +359,6 @@ Future<void> main(List<String> args) async {
           'title': 'Daft Punk - One More Time (Official Video)',
           'author': 'Daft Punk',
           'duration': 320000,
-          'thumbnail': '',
-        },
-      ],
-      // The same recording on YouTube, found from an archive match's own
-      // title and creator, so a flac-only match can still be topped up with a
-      // container the selected preset can actually play.
-      'Scarlet Begonias Grateful Dead': [
-        {
-          'id': 'ytscarlet',
-          'title': 'Scarlet Begonias',
-          'author': 'Grateful Dead',
-          'duration': 674000,
           'thumbnail': '',
         },
       ],
@@ -581,9 +480,6 @@ Future<void> main(List<String> args) async {
   check('search failed over to the live instance',
       live.requests.any((r) => r.startsWith('/search/')),
       'requests=${live.requests}');
-  check('the archive was not consulted once tidal answered',
-      !archive.requests.any((r) => r.startsWith('/advancedsearch')),
-      'requests=${archive.requests}');
 
   print('\nstreams() routes back to the source that matched, and retries 202');
   final startedAt = DateTime.now();
@@ -613,15 +509,29 @@ Future<void> main(List<String> args) async {
       legacyStreams is List && legacyStreams.isNotEmpty,
       'streams=$legacyStreams');
 
-  print('\nthe archive answers when no proxy has the track');
-  // Every hifi-api instance now returns an empty catalogue, which is the state
-  // the plugin is actually in today.
+  print('\na match from a source this version dropped still plays');
+  // Spotube keeps the matches it resolved, so "archive:" ids from before the
+  // Internet Archive was removed still arrive, and Spotube never re-matches.
+  final dropped = await hetu.eval('''
+    { "id": "archive:discovery-daft-punk-2001-flac|01 One More Time.flac",
+      "title": "One More Time", "artists": ["Daft Punk"] }
+  ''');
+  final droppedStreams =
+      await audioSource.invoke('streams', positionalArgs: [dropped]) as List;
+  check('it is played from youtube by its title and artists',
+      droppedStreams.isNotEmpty &&
+          youtube.manifests.isNotEmpty &&
+          youtube.manifests.last == 'ytonemoretime',
+      'streams=$droppedStreams manifests=${youtube.manifests}');
+
+  print('\nyoutube answers when nothing lossless has the track');
+  // Every hifi-api instance returns an empty catalogue here, so the router
+  // has to fall all the way through to YouTube.
   final barren = FakeHifi(hasCatalogue: false);
   await barren.start();
   sourcesDocument = () => {
         'sources': [
           {'type': 'hifi-api', 'base': barren.base},
-          {'type': 'archive', 'base': archive.base},
         ],
       };
   storage.store.clear();
@@ -632,74 +542,6 @@ Future<void> main(List<String> args) async {
   store.memberSet(
       'cached',
       await hetu.eval('[{"type": "hifi-api", "base": "${barren.base}"},'
-          '{"type": "archive", "base": "${archive.base}"}]'));
-
-  final live77 = await hetu.eval('''
-    { "name": "Scarlet Begonias", "isrc": "",
-      "artists": [{ "name": "Grateful Dead" }] }
-  ''');
-  final archiveMatches =
-      await audioSource.invoke('matches', positionalArgs: [live77]);
-  check('the archive produced a match',
-      archiveMatches is List && archiveMatches.isNotEmpty,
-      'matches=$archiveMatches');
-  final archiveMatch = (archiveMatches as List).first;
-  check(
-      'only the matching flac was taken',
-      archiveMatch['id'] ==
-          'archive:gd1977-05-08|gd77-05-08d1t01 Scarlet Begonias.flac',
-      'match=$archiveMatch');
-  check('the item title became the album',
-      archiveMatch['album'] == 'Barton Hall 1977', 'match=$archiveMatch');
-  check('length was read as milliseconds', archiveMatch['duration'] == 674000,
-      'match=$archiveMatch');
-
-  final archiveStreams =
-      await audioSource.invoke('streams', positionalArgs: [archiveMatch]);
-  check(
-      'the archive stream is a direct flac url',
-      (archiveStreams as List).first['url'] ==
-          '${archive.base}/download/gd1977-05-08/gd77-05-08d1t01%20Scarlet%20Begonias.flac',
-      'streams=$archiveStreams');
-
-  check('the flac is still offered first, so lossless wins when it is asked for',
-      (archiveStreams as List).first['container'] == 'flac',
-      'streams=$archiveStreams');
-  // Spotube keeps only the streams whose container equals the selected
-  // preset's name and reduces over them, and reduce throws on an empty list.
-  // A flac-only match is therefore silently unplayable for anyone left on the
-  // default mp4 preset, and Spotube never retries the other matches.
-  final archiveContainers =
-      (archiveStreams as List).map((s) => s['container']).toSet();
-  check('a lossy container is offered too, so the mp4 preset has something',
-      archiveContainers.contains('mp4'), 'containers=$archiveContainers');
-  check('the topped-up stream is the same recording from youtube',
-      youtube.manifests.contains('ytscarlet'),
-      'manifests=${youtube.manifests}');
-
-  print('\nfree-text search catches uploads the creator search misses');
-  final looseArchive = FakeArchive(answerCreatorSearch: false);
-  await looseArchive.start();
-  store.memberSet(
-      'cached',
-      await hetu.eval('[{"type": "archive", "base": "${looseArchive.base}"}]'));
-  final looseMatches =
-      await audioSource.invoke('matches', positionalArgs: [live77]) as List;
-  check('a match was still found', looseMatches.isNotEmpty,
-      'matches=$looseMatches');
-  check('the creator search ran first',
-      looseArchive.queries.first.startsWith('creator:'),
-      'queries=${looseArchive.queries}');
-  check(
-      'the fallback searched artist and title as free text',
-      looseArchive.queries.length == 2 &&
-          looseArchive.queries[1].startsWith('"Grateful Dead" AND "Scarlet Begonias"'),
-      'queries=${looseArchive.queries}');
-
-  print('\nyoutube answers when nothing lossless has the track');
-  store.memberSet(
-      'cached',
-      await hetu.eval('[{"type": "archive", "base": "${looseArchive.base}"},'
           '{"type": "youtube", "base": "https://youtube.com"}]'));
 
   final ytQueriesBefore = youtube.queries.length;
@@ -776,37 +618,6 @@ Future<void> main(List<String> args) async {
       youtube.queries.length - queriesBeforeFeat == 1,
       'queries=${youtube.queries.sublist(queriesBeforeFeat)}');
 
-  print('\na folder named after the track does not make every file the track');
-  // archive.org uploads are often one folder per single, with each file's
-  // title set to its full path. Matching the path meant every sibling in
-  // "Cars And Girls [+]" -- Vendetta, Nero The Zero -- looked like the track,
-  // and the winning match was titled with a path, which is unsearchable.
-  final singles = FakeArchive(folderNamedAfterTrack: true);
-  await singles.start();
-  storage.store.clear();
-  store.memberSet('cached',
-      await hetu.eval('[{"type": "archive", "base": "${singles.base}"}]'));
-
-  final carsAndGirls = await hetu.eval('''
-    { "name": "Cars and Girls", "isrc": "GBBBN8800007",
-      "artists": [{ "name": "Prefab Sprout" }] }
-  ''');
-  final singleMatches = await audioSource
-      .invoke('matches', positionalArgs: [carsAndGirls]) as List;
-  check('the siblings sharing the folder name were not matched',
-      singleMatches.length == 1, 'matches=$singleMatches');
-  check(
-      'the match is the file that really is the track',
-      singleMatches.isNotEmpty &&
-          singleMatches.first['id'].toString().endsWith(
-              "01. Cars And Girls.flac"),
-      'matches=$singleMatches');
-  check(
-      'the title is the track, not the path it sits at',
-      singleMatches.isNotEmpty &&
-          singleMatches.first['title'] == 'Cars And Girls',
-      'matches=$singleMatches');
-
   print('\na searchable instance that cannot stream still plays');
   // The state every public instance is in: the catalogue needs no account, so
   // searching answers perfectly and the router stops there, while /track/ is
@@ -841,81 +652,6 @@ Future<void> main(List<String> args) async {
       blockedStreams.map((s) => s['container']).toSet().contains('mp4'),
       'streams=$blockedStreams');
 
-  print('\nsomebody else covering the track is not the track');
-  // A real upload: searching the Archive for Gala's "Freed From Desire" finds
-  // gala-freed-from-desire-vibegen-cover, whose file carries the song's name.
-  // Matching on the name alone let it win the routing, and topping it up then
-  // searched YouTube for the cover's title -- so the listener got a stranger's
-  // performance instead of the record.
-  final coverOnly = FakeArchive(coverUpload: true);
-  await coverOnly.start();
-  storage.store.clear();
-  store.memberSet('cached',
-      await hetu.eval('[{"type": "archive", "base": "${coverOnly.base}"}]'));
-
-  final freedFromDesire = await hetu.eval('''
-    { "name": "Freed From Desire", "isrc": "ITA179700143",
-      "artists": [{ "name": "Gala" }] }
-  ''');
-  final coverMatches = await audioSource
-      .invoke('matches', positionalArgs: [freedFromDesire]) as List;
-  check('the cover was not offered as the track', coverMatches.isEmpty,
-      'matches=$coverMatches');
-
-  print('\nanother band playing the track is not the track');
-  // A real upload: searching the Archive for Europe's "The Final Countdown"
-  // finds nothing by creator, and the free-text fallback finds Thanks to
-  // Gravity's bar gig, whose setlist mentions Europe. Its file is named after
-  // the song alone, so the cover check cannot see it -- the listener got two
-  // minutes of an impromptu cover, opening on someone talking into the mic.
-  final otherBand = FakeArchive(otherBandsGig: true);
-  await otherBand.start();
-  storage.store.clear();
-  store.memberSet('cached',
-      await hetu.eval('[{"type": "archive", "base": "${otherBand.base}"}]'));
-
-  final finalCountdown = await hetu.eval('''
-    { "name": "The Final Countdown", "isrc": "SEAAA8600010",
-      "artists": [{ "name": "Europe" }] }
-  ''');
-  final otherBandMatches = await audioSource
-      .invoke('matches', positionalArgs: [finalCountdown]) as List;
-  check("another band's gig was not offered as the track",
-      otherBandMatches.isEmpty, 'matches=$otherBandMatches');
-  check('both searches ran, so the gig really was considered',
-      otherBand.queries.length == 2, 'queries=${otherBand.queries}');
-
-  print('\nanother version of the track is not the track');
-  // A real upload: Soft Cell's "Tainted Love" is 2:33 on the album, and the
-  // Archive's best hit is a club compilation's 8:55 extended mix -- right
-  // artist, right name, so nothing else could tell it apart from the record.
-  final club = FakeArchive(clubMix: true);
-  await club.start();
-  storage.store.clear();
-  store.memberSet('cached',
-      await hetu.eval('[{"type": "archive", "base": "${club.base}"}]'));
-
-  final taintedLove = await hetu.eval('''
-    { "name": "Tainted Love", "isrc": "GBAAN8100013", "durationMs": 153000,
-      "artists": [{ "name": "Soft Cell" }] }
-  ''');
-  final clubMatches = await audioSource
-      .invoke('matches', positionalArgs: [taintedLove]) as List;
-  check('an 8:55 mix was not offered for a 2:33 track', clubMatches.isEmpty,
-      'matches=$clubMatches');
-
-  // Same file, asked for as the extended mix it is: the length is compared,
-  // not the file rejected outright.
-  storage.store.clear();
-  final extendedMix = await hetu.eval('''
-    { "name": "Tainted Love", "isrc": "", "durationMs": 540000,
-      "artists": [{ "name": "Soft Cell" }] }
-  ''');
-  final extendedMatches = await audioSource
-      .invoke('matches', positionalArgs: [extendedMix]) as List;
-  check('the same file still matches a track of its own length',
-      extendedMatches.length == 1, 'matches=$extendedMatches');
-
   print('\na title match credited to someone else is not the track');
   // hifi-api takes the whole query as one string and weighs the title, not the
   // artist: asking a live instance for "cars and girls cliff richard" returns
@@ -948,6 +684,97 @@ Future<void> main(List<String> args) async {
           sameTitleMatches.first['id'] == 'youtube:ytjocelyn',
       'matches=$sameTitleMatches');
 
+  print('\nmonochrome plays the original, and waits out a transient 521');
+  // The source the plugin now leans on: its own files, no shared account. The
+  // real host answers a 521 on roughly one file request in seven, and Spotube
+  // streams the URL itself without retrying, so the check happens here.
+  final monoDown = FakeMonochrome(alive: false);
+  final mono = FakeMonochrome(transientFailures: 2);
+  await monoDown.start();
+  await mono.start();
+  storage.store.clear();
+  store.memberSet(
+      'cached',
+      await hetu.eval('[{"type": "monochrome", "base": "${monoDown.base}"},'
+          '{"type": "monochrome", "base": "${mono.base}"},'
+          '{"type": "youtube", "base": "https://youtube.com"}]'));
+
+  final monoTrack = await hetu.eval('''
+    { "name": "One More Time", "isrc": "GBDUW0000053",
+      "artists": [{ "name": "Daft Punk" }] }
+  ''');
+  final monoMatches = await audioSource
+      .invoke('matches', positionalArgs: [monoTrack]) as List;
+  check('search failed over past the dead host',
+      monoDown.requests.any((r) => r.startsWith('/search/tracks')) &&
+          mono.requests.any((r) => r.startsWith('/search/tracks')),
+      'down=${monoDown.requests} live=${mono.requests}');
+  check('the isrc-exact original is the first match',
+      monoMatches.isNotEmpty &&
+          monoMatches.first['id'] == 'monochrome:155102871061270528',
+      'matches=$monoMatches');
+  check('the cover by another artist was dropped',
+      monoMatches.every((m) => m['id'] != 'monochrome:900'),
+      'matches=$monoMatches');
+  check('a result with no file behind it was dropped',
+      monoMatches.every((m) => m['id'] != 'monochrome:901'),
+      'matches=$monoMatches');
+  check('duration is kept in milliseconds',
+      monoMatches.isNotEmpty && monoMatches.first['duration'] == 320357,
+      'matches=$monoMatches');
+  check(
+      'the match links to the host that had it',
+      monoMatches.isNotEmpty &&
+          monoMatches.first['externalUri'] ==
+              '${mono.base}/track/155102871061270528',
+      'matches=$monoMatches');
+
+  // Only the live host is published for streams here: the dead one would add
+  // its own retries to the wait without changing what is under test.
+  store.memberSet(
+      'cached',
+      await hetu.eval('[{"type": "monochrome", "base": "${mono.base}"},'
+          '{"type": "youtube", "base": "https://youtube.com"}]'));
+  final monoStarted = DateTime.now();
+  final monoStreams = await audioSource
+      .invoke('streams', positionalArgs: [monoMatches.first]) as List;
+  final monoElapsed = DateTime.now().difference(monoStarted);
+  check('the 521s were retried until the file answered',
+      mono.fileCalls == 3, 'calls=${mono.fileCalls}');
+  check('retries waited for the backoff', monoElapsed.inSeconds >= 3,
+      'elapsed=${monoElapsed.inSeconds}s');
+  check(
+      'the stream is the file itself, offered first as flac',
+      monoStreams.isNotEmpty &&
+          monoStreams.first['url'] ==
+              '${mono.base}/track/155102871061270528' &&
+          monoStreams.first['container'] == 'flac',
+      'streams=$monoStreams');
+  check(
+      'quality is read off the size, and a ~1 Mbps file is reported 16-bit',
+      monoStreams.isNotEmpty &&
+          monoStreams.first['bitDepth'] == 16 &&
+          (monoStreams.first['bitrate'] as num) > 990000 &&
+          (monoStreams.first['bitrate'] as num) < 1010000,
+      'streams=$monoStreams');
+  check('a lossy container is offered too, so the mp4 preset has something',
+      monoStreams.map((s) => s['container']).toSet().contains('mp4'),
+      'streams=$monoStreams');
+
+  print('\na monochrome file above CD bitrate is reported hi-res');
+  final monoHiRes = FakeMonochrome(fileSize: 145000000);
+  await monoHiRes.start();
+  store.memberSet('cached',
+      await hetu.eval('[{"type": "monochrome", "base": "${monoHiRes.base}"}]'));
+  final hiResStreams = await audioSource
+      .invoke('streams', positionalArgs: [monoMatches.first]) as List;
+  check(
+      'a file that averages above 24/44.1 PCM is not reported as CD quality',
+      hiResStreams.isNotEmpty &&
+          hiResStreams.first['bitDepth'] == 24 &&
+          hiResStreams.first['sampleRate'] == 96000,
+      'streams=$hiResStreams');
+
   print('\ncaching and fallbacks');
   // Fetch once for real so a cache exists to fall back to.
   store.memberSet('cached', null);
@@ -978,17 +805,17 @@ Future<void> main(List<String> args) async {
   check('bundled defaults are all that is left',
       defaults.length == 4 && defaults.last['type'] == 'youtube',
       'defaults=$defaults');
-  check('lossless sources are bundled ahead of youtube',
-      defaults[defaults.length - 2]['base'] == 'https://archive.org',
-      'defaults=$defaults');
+  check('monochrome is bundled first, ahead of the blockable proxies',
+      defaults.first['type'] == 'monochrome', 'defaults=$defaults');
+  check('the archive is no longer bundled',
+      defaults.every((d) => d['type'] != 'archive'), 'defaults=$defaults');
 
   await dead.stop();
   await live.stop();
   await barren.stop();
-  await archive.stop();
-  await looseArchive.stop();
-  await otherBand.stop();
-  await club.stop();
+  await monoDown.stop();
+  await mono.stop();
+  await monoHiRes.stop();
 
   print('');
   if (failures.isEmpty) {

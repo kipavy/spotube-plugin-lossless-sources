@@ -39,17 +39,17 @@ var DIGITS = "0123456789"
 /// an offline install still has something to try.
 ///
 /// The hifi-api instances proxy Tidal with their own accounts and get blocked,
-/// which is exactly why the live list lives in the repository. The Archive and
-/// YouTube need no account at all, so they belong in the binary: they are what
+/// which is exactly why the live list lives in the repository. Monochrome
+/// serves its own files rather than proxying a shared account, and YouTube
+/// needs no account at all, so both belong in the binary: they are what
 /// remains when every proxy is down.
 ///
-/// Order is preference order, and lossless comes first: Tidal, then the
-/// Archive, then YouTube -- which is lossy, but is the only one that reliably
-/// has the track.
+/// Order is preference order, and lossless comes first: Monochrome, Tidal,
+/// then YouTube -- which is lossy, but is the one that reliably has the track.
 var DEFAULT_SOURCES = [
+  { "type": "monochrome", "base": "https://tracks.monochrome.st" },
   { "type": "hifi-api", "base": "https://hifi-api-w9y8.onrender.com" },
   { "type": "hifi-api", "base": "https://hifi-api-bffw.onrender.com" },
-  { "type": "archive", "base": "https://archive.org" },
   { "type": "youtube", "base": "https://youtube.com" },
 ]
 

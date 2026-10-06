@@ -1,0 +1,257 @@
+import "module:std" as std
+
+var HttpClient = std.HttpClient
+// Never referenced directly, but the runtime resolves the type of every
+// `.then` callback parameter in this scope.
+var HttpResponse = std.HttpResponse
+// Spotube's runtime has no Future.delayed -- waiting goes through FutureUtils.
+var FutureUtils = std.FutureUtils
+var Duration = std.Duration
+
+/// Characters kept when comparing artist names, so "Beyonce" and "Beyoncé"
+/// compare equal.
+var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
+
+var DIGITS = "0123456789"
+
+/// Backoff before re-checking a stream that answered 5xx. The host sits behind
+/// Cloudflare, and a 521 (origin unreachable) on one request is routinely gone
+/// on the next -- measured: two tracks in fourteen failed once, then played.
+/// The length caps the retries, so a host that is really down costs seconds.
+var RETRY_DELAYS = [1, 2, 4]
+
+/// The bitrate of uncompressed 16-bit/44.1kHz stereo PCM, and of 24-bit at
+/// the same rate. FLAC never averages above the PCM it encodes, so a file
+/// whose average exceeds the first cannot be 16/44.1, and one above the second
+/// cannot be 44.1kHz at all.
+var CD_PCM_BITRATE = 1411200
+var HIRES_PCM_BITRATE = 2116800
+
+/// Monochrome's own catalogue: search plus direct FLAC files.
+///
+/// Monochrome moved off hifi-api in April 2026 and serves this from its own
+/// servers, so it does not depend on a shared Tidal account that can be
+/// banned. The stream is the file itself -- no manifest to decode, no token to
+/// refresh, and a URL that does not expire.
+class MonochromeSource {
+  var client: HttpClient
+
+  get id -> String => "monochrome"
+
+  get supportedPresets -> List {
+    return [
+      {
+        type: "lossless",
+        name: "flac",
+        qualities: [
+          { bitDepth: 24, sampleRate: 96000 },
+          { bitDepth: 16, sampleRate: 44100 },
+        ],
+      }.toJson(),
+    ]
+  }
+
+  construct (this.client)
+
+  fun toMatchObjects(items: List, base: String) -> List {
+    if (items == null || items.isEmpty) return []
+    return items.map((item) {
+      var names = []
+      if (item["artistNames"] != null) {
+        for (var name in item["artistNames"]) {
+          if (name != null && name != "") names.add(name)
+        }
+      }
+      if (names.isEmpty) names.add("Unknown")
+
+      return {
+        "id": "monochrome:${item["id"]}",
+        "title": item["title"] ?? "",
+        "artists": names,
+        // Already milliseconds, unlike hifi-api.
+        "duration": item["duration"] ?? 0,
+        "thumbnail": item["artwork"] ?? "",
+        "externalUri": "${base}/track/${item["id"]}",
+        "isrc": item["isrc"] ?? "",
+        "album": "",
+      }.toJson()
+    }).toList()
+  }
+
+  /// Searches one host, falling through to the next when it is down or
+  /// returns nothing. Answers { base, items } so a match can link to the host
+  /// that actually had it.
+  fun searchFrom(index: int, query: String, bases: List) -> Future {
+    if (index >= bases.length) return Future.value(null)
+
+    return client.get_req(
+      "${bases[index]}/search/tracks",
+      queryParameters: { "q": query, "limit": 20 }.toJson(),
+    ).then((res) {
+      if (res.statusCode != 200 || res.data == null) {
+        return searchFrom(index + 1, query, bases)
+      }
+      var items = res.data["tracks"]
+      if (items == null || items.isEmpty) return searchFrom(index + 1, query, bases)
+
+      // `playable: false` is a catalogue entry with no file behind it.
+      var playable = []
+      for (var item in items) {
+        if (item["playable"] != false) playable.add(item)
+      }
+      if (playable.isEmpty) return searchFrom(index + 1, query, bases)
+      return { "base": bases[index], "items": playable }
+    })
+  }
+
+  fun simplify(value) -> String {
+    if (value == null) return ""
+    var lower = value.toString().toLowerCase()
+    var kept = ""
+    for (var index = 0; index < lower.length; index = index + 1) {
+      var character = lower.substring(index, index + 1)
+      if (KEEP.contains(character)) kept = kept + character
+    }
+    return kept.trim()
+  }
+
+  /// Ranks an exact ISRC hit first. Searching by ISRC alone returns nothing
+  /// here, but every result carries one, so the right recording is still
+  /// picked instead of guessed from the title.
+  fun rank(items: List, isrc) -> List {
+    if (items == null || items.isEmpty) return []
+    if (isrc == null || isrc == "") return items
+
+    var wanted = isrc.toUpperCase()
+    var ordered = []
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (candidate != null && candidate.toUpperCase() == wanted) ordered.add(item)
+    }
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (candidate == null || candidate.toUpperCase() != wanted) ordered.add(item)
+    }
+    return ordered
+  }
+
+  /// Drops results that only share the title: an ISRC hit always survives,
+  /// anything else has to be credited to one of the track's artists. The
+  /// search returns covers next to the original -- asking for Weird Fishes
+  /// brings back Radiohead, the Noordpool Orchestra and Lianne La Havas.
+  fun plausible(items: List, track: Map) -> List {
+    if (items == null || items.isEmpty) return []
+
+    var wanted = []
+    if (track["artists"] != null) {
+      for (var artist in track["artists"]) {
+        var name = artist == null ? null : artist["name"]
+        var simplified = simplify(name ?? artist)
+        if (simplified != "") wanted.add(simplified)
+      }
+    }
+    if (wanted.isEmpty) return items
+
+    var isrc = track["isrc"]
+    var exact = isrc == null || isrc == "" ? "" : isrc.toUpperCase()
+
+    var kept = []
+    for (var item in items) {
+      var candidate = item["isrc"]
+      if (exact != "" && candidate != null && candidate.toUpperCase() == exact) {
+        kept.add(item)
+      } else {
+        var shared = false
+        if (item["artistNames"] != null) {
+          for (var credit in item["artistNames"]) {
+            var simplified = simplify(credit)
+            for (var name in wanted) {
+              if (simplified != "" && (simplified.contains(name) || name.contains(simplified))) {
+                shared = true
+              }
+            }
+          }
+        }
+        if (shared) kept.add(item)
+      }
+    }
+    return kept
+  }
+
+  fun matches(track: Map, query: String, bases: List) -> Future {
+    if (bases == null || bases.isEmpty) return Future.value([])
+
+    return searchFrom(0, query, bases).then((found) {
+      if (found == null) return []
+      return toMatchObjects(rank(plausible(found["items"], track), track["isrc"]), found["base"])
+    })
+  }
+
+  /// Reads a numeric header. Headers arrive as lists of strings, and
+  /// `int.tryParse` does not exist in this runtime, so the digits are checked
+  /// before parsing.
+  fun headerNumber(headers, name: String) -> int {
+    if (headers == null) return 0
+    var values = headers[name]
+    if (values == null || values.isEmpty) return 0
+    var text = values[0].toString().trim()
+    if (text == "") return 0
+    for (var index = 0; index < text.length; index = index + 1) {
+      if (!DIGITS.contains(text.substring(index, index + 1))) return 0
+    }
+    return int.parse(text)
+  }
+
+  /// The host sends no quality fields and labels the file
+  /// application/octet-stream, so quality is read off the file's size: its
+  /// real average bitrate, and the least resolution that bitrate implies.
+  /// That never overstates -- a file reported 24-bit really is beyond CD.
+  fun toStreamObject(url: String, size: int, durationMs: int) -> Map {
+    var bitrate = size > 0 && durationMs > 0 ? (size * 8 * 1000 / durationMs).toInt() : CD_PCM_BITRATE
+
+    return {
+      "url": url,
+      "container": "flac",
+      "type": "lossless",
+      "codec": "flac",
+      "bitrate": bitrate,
+      "bitDepth": bitrate > CD_PCM_BITRATE ? 24 : 16,
+      "sampleRate": bitrate > HIRES_PCM_BITRATE ? 96000 : 44100,
+    }.toJson()
+  }
+
+  /// Checks the file answers before handing it to the player: Spotube streams
+  /// the URL itself and never retries, so a transient 521 there would be a
+  /// track that silently does not play. A HEAD costs no audio.
+  fun firstLive(index: int, attempt: int, reference: String, durationMs: int, bases: List) -> Future {
+    if (index >= bases.length) return Future.value([])
+
+    var url = "${bases[index]}/track/${reference}"
+    return client.head(url).then((res) {
+      if (res.statusCode == 200 || res.statusCode == 206) {
+        var size = headerNumber(res.headers, "content-length")
+        return [toStreamObject(url, size, durationMs)]
+      }
+
+      // 4xx means this host does not have the file; only 5xx is worth waiting.
+      if (res.statusCode >= 500 && attempt < RETRY_DELAYS.length) {
+        return FutureUtils.delayed(Duration(seconds: RETRY_DELAYS[attempt]), () {
+          return firstLive(index, attempt + 1, reference, durationMs, bases)
+        })
+      }
+
+      return firstLive(index + 1, 0, reference, durationMs, bases)
+    })
+  }
+
+  fun streams(match: Map, reference: String, bases: List) -> Future {
+    if (bases == null || bases.isEmpty) return Future.value([])
+    if (reference == null || reference == "") return Future.value([])
+
+    // Milliseconds, as toMatchObjects wrote it.
+    var durationMs = match["duration"] ?? 0
+    return firstLive(0, 0, reference, durationMs, bases)
+  }
+}
+
+export { MonochromeSource }

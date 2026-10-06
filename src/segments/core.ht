@@ -79,33 +79,35 @@ class CorePlugin {
 
 Each track is routed to whichever public source can actually play it:
 
+- **Monochrome** — the mainstream catalogue in FLAC, up to 24-bit, served
+  from Monochrome's own servers. Matched by ISRC.
 - **hifi-api instances** — Tidal, the full mainstream catalogue, matched by
   ISRC so remasters and live versions are not confused with each other.
-- **the Internet Archive** — live recordings, public-domain material and
-  studio albums other people have uploaded. No account, nothing to block, but
-  coverage is a lottery: a track is there only if someone put it there.
 - **YouTube** — everything else. Not lossless (Opus or AAC), so it is tried
-  last, after both lossless sources have come up empty.
+  last, after the lossless sources have come up empty.
 
 ## If playback stops working
 
 Instances proxy Tidal with their own account, and an instance answering
 `Upstream API error` or `Token refresh failed` has had that account blocked.
-As of September 2026 every public one is in that state, so a track plays
-losslessly only when the Archive happens to hold it — otherwise it falls back
-to YouTube, which is lossy but almost always has it.
+As of October 2026 every public one is in that state. Monochrome does not
+depend on such an account, so it is what plays losslessly today; when it does
+not have a track, playback falls back to YouTube.
 
 There is nothing to configure. The source list is a file in the repository
-that an hourly probe keeps current, so a source that comes back reaches you
-within the hour without an update.
+that an hourly probe keeps current — it also picks up new instances from
+public uptime trackers, and follows Monochrome if its API moves — so a source
+that appears or comes back reaches you within the hour without an update.
 
 Report a broken source, or suggest a working one, at
 [github.com/kipavy/spotube-plugin-lossless-sources/issues](https://github.com/kipavy/spotube-plugin-lossless-sources/issues).
 
 ## Quality
 
-Streams are served at whatever tier the instance's Tidal account allows. A
-lower-tier account returns AAC 320 even when lossless is requested.
+Monochrome serves the file as it is stored: 16-bit/44.1kHz up to
+24-bit/96kHz depending on the release. A hifi-api instance serves whatever
+tier its Tidal account allows; a lower-tier account returns AAC 320 even when
+lossless is requested.
 "
   }
 }

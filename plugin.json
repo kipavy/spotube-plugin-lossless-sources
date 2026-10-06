@@ -1,8 +1,8 @@
 {
-  "version": "1.2.5",
+  "version": "1.3.0",
   "name": "Lossless Sources",
   "author": "kipavy",
-  "description": "Audio source for Spotube that needs no account and no configuration. Routes each track to whichever public source can play it: hifi-api instances and the Internet Archive for lossless FLAC, YouTube as the fallback so a track always plays.",
+  "description": "Audio source for Spotube that needs no account and no configuration. Routes each track to whichever public source can play it: Monochrome and hifi-api instances for lossless FLAC, YouTube as the fallback so a track always plays.",
   "entryPoint": "LosslessSourcesPlugin",
   "apis": [
     "localstorage"
