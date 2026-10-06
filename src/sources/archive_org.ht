@@ -133,6 +133,55 @@ class ArchiveOrgSource {
     return value.toString().replaceAll("\"", "")
   }
 
+  /// Lowercases and turns punctuation into spaces, single-spaced and padded,
+  /// so a name can be looked for as whole words: "Europe-The Final Countdown"
+  /// becomes " europe the final countdown ", not "europethe".
+  fun words(value) -> String {
+    if (value == null) return " "
+    var lower = value.toString().toLowerCase()
+    var spaced = " "
+    for (var index = 0; index < lower.length; index = index + 1) {
+      var character = lower.substring(index, index + 1)
+      if (!KEEP.contains(character)) character = " "
+      if (character != " " || !spaced.endsWith(" ")) spaced = spaced + character
+    }
+    return spaced.endsWith(" ") ? spaced : spaced + " "
+  }
+
+  /// Every artist the track credits, as padded words.
+  fun artistsOf(track: Map) -> List {
+    var names = []
+    if (track["artists"] == null) return names
+    for (var artist in track["artists"]) {
+      var name = artist == null ? null : artist["name"]
+      var spaced = words(name ?? artist)
+      if (spaced != " ") names.add(spaced)
+    }
+    return names
+  }
+
+  /// Whether an item is credited to one of the track's artists.
+  ///
+  /// The free-text search matches anything that mentions the artist, setlists
+  /// included: Europe's "The Final Countdown" found another band's bar gig
+  /// whose description read "[Europe cover, impromptu]", and its file, named
+  /// after the song alone, passed every other check. The artist has to appear
+  /// in the item's creator or title, or in the file itself -- the last two
+  /// because uploads that left `creator` as the uploader still name the
+  /// artist there. Matched as whole words, so "Yes" is not found in
+  /// "Yesterday".
+  fun credited(texts: List, artists: List) -> bool {
+    // Nothing to check against, so nothing can be ruled out.
+    if (artists.isEmpty) return true
+    for (var text in texts) {
+      var spaced = words(text)
+      for (var artist in artists) {
+        if (spaced.contains(artist)) return true
+      }
+    }
+    return false
+  }
+
   fun artistOf(track: Map) -> String {
     if (track["artists"] == null || track["artists"].isEmpty) return ""
     var first = track["artists"][0]
@@ -188,6 +237,7 @@ class ArchiveOrgSource {
       var wanted = simplify(track["name"] ?? "")
       var metadata = res.data["metadata"] ?? {}
       var creator = metadata["creator"] ?? ""
+      var artists = artistsOf(track)
       var found = []
 
       for (var file in files) {
@@ -206,6 +256,10 @@ class ArchiveOrgSource {
         // else's cover carries it too, and the router has no second chance
         // once a source has answered.
         if (wanted != "" && (foreign(simplified, wanted) || foreign(simplifiedName, wanted))) continue
+
+        // Nor is carrying the name and being found by the artist: the free
+        // text matches a setlist naming whoever wrote the song.
+        if (!credited([creator, metadata["title"], file["title"], name], artists)) continue
 
         found.add({
           "id": "archive:${identifier}|${name}",

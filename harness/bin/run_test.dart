@@ -209,12 +209,19 @@ class FakeArchive extends FakeServer {
   /// FLAC carries the song's name and "Cover".
   final bool coverUpload;
 
+  /// A real shape from archive.org: another band's bar gig whose setlist, in
+  /// the description, says "The Final Countdown [Europe cover, impromptu]".
+  /// The free-text search finds it on that line, and the FLAC carries the
+  /// song's name with nothing marking it as a cover.
+  final bool otherBandsGig;
+
   final List<String> queries = [];
 
   FakeArchive({
     this.answerCreatorSearch = true,
     this.folderNamedAfterTrack = false,
     this.coverUpload = false,
+    this.otherBandsGig = false,
   });
 
   @override
@@ -230,7 +237,9 @@ class FakeArchive extends FakeServer {
               {
                 'identifier': coverUpload
                     ? 'gala-freed-from-desire-vibegen-cover'
-                    : folderNamedAfterTrack
+                    : otherBandsGig
+                        ? '20180602ttglbg'
+                        : folderNamedAfterTrack
                         ? 'lionsinmyowngardena'
                         : 'gd1977-05-08'
               },
@@ -252,6 +261,25 @@ class FakeArchive extends FakeServer {
             'name': 'Gala Freed from desire (Vibegen Cover).flac',
             'title': 'Gala Freed from desire (Vibegen Cover)',
             'length': '215.0',
+          },
+        ],
+      }));
+      await request.response.close();
+      return;
+    }
+
+    if (request.uri.path == '/metadata/20180602ttglbg') {
+      request.response.write(jsonEncode({
+        'metadata': {
+          'title': "Thanks to Gravity Live at Libby's Bar & Grill on 2018-06-02",
+          'creator': 'Thanks to Gravity',
+          'description': '04 The Final Countdown [Europe cover, impromptu]',
+        },
+        'files': [
+          {
+            'name': "2018-06-02 Thanks to Gravity - Libby's Bar & Grill/04 The Final Countdown.flac",
+            'title': 'The Final Countdown',
+            'length': '127.88',
           },
         ],
       }));
@@ -810,6 +838,29 @@ Future<void> main(List<String> args) async {
   check('the cover was not offered as the track', coverMatches.isEmpty,
       'matches=$coverMatches');
 
+  print('\nanother band playing the track is not the track');
+  // A real upload: searching the Archive for Europe's "The Final Countdown"
+  // finds nothing by creator, and the free-text fallback finds Thanks to
+  // Gravity's bar gig, whose setlist mentions Europe. Its file is named after
+  // the song alone, so the cover check cannot see it -- the listener got two
+  // minutes of an impromptu cover, opening on someone talking into the mic.
+  final otherBand = FakeArchive(otherBandsGig: true);
+  await otherBand.start();
+  storage.store.clear();
+  store.memberSet('cached',
+      await hetu.eval('[{"type": "archive", "base": "${otherBand.base}"}]'));
+
+  final finalCountdown = await hetu.eval('''
+    { "name": "The Final Countdown", "isrc": "SEAAA8600010",
+      "artists": [{ "name": "Europe" }] }
+  ''');
+  final otherBandMatches = await audioSource
+      .invoke('matches', positionalArgs: [finalCountdown]) as List;
+  check("another band's gig was not offered as the track",
+      otherBandMatches.isEmpty, 'matches=$otherBandMatches');
+  check('both searches ran, so the gig really was considered',
+      otherBand.queries.length == 2, 'queries=${otherBand.queries}');
+
   print('\na title match credited to someone else is not the track');
   // hifi-api takes the whole query as one string and weighs the title, not the
   // artist: asking a live instance for "cars and girls cliff richard" returns
@@ -881,6 +932,7 @@ Future<void> main(List<String> args) async {
   await barren.stop();
   await archive.stop();
   await looseArchive.stop();
+  await otherBand.stop();
 
   print('');
   if (failures.isEmpty) {
