@@ -213,10 +213,11 @@ connection errors, Hetu has no try/catch, and its Future binding exposes only
 
 ## Build
 
-Requires the Dart SDK and `hetu_script_dev_tools`:
+Requires the Dart SDK and `hetu_script_dev_tools` 0.1.0+2 — later versions
+compile hetu_script 0.6 bytecode, which Spotube's 0.4.2 runtime cannot load:
 
 ```bash
-dart pub global activate hetu_script_dev_tools
+dart pub global activate hetu_script_dev_tools 0.1.0+2
 make          # compiles src/plugin.ht -> build/plugin.out
 make test     # runs the bytecode against fake sources
 make archive  # packages -> build/plugin.smplug

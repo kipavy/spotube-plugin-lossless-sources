@@ -28,8 +28,10 @@ jobs:
           channel: stable
           flutter-version: 3.35.2
 
+      # Pinned: 0.1.2 and later compile hetu_script 0.6 bytecode, which the
+      # 0.4.2 runtime Spotube ships refuses to load.
       - name: Install dependencies
-        run: dart pub global activate hetu_script_dev_tools
+        run: dart pub global activate hetu_script_dev_tools 0.1.0+2
 
       - name: Check runtime scope resolution
         run: python3 check_scope.py
