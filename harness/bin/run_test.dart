@@ -215,6 +215,11 @@ class FakeArchive extends FakeServer {
   /// song's name with nothing marking it as a cover.
   final bool otherBandsGig;
 
+  /// A real shape from archive.org: a 1994 club compilation whose
+  /// "04. Soft Cell - Tainted Love.flac" is the 8:55 extended mix, credited
+  /// to the right artist under the right name.
+  final bool clubMix;
+
   final List<String> queries = [];
 
   FakeArchive({
@@ -222,6 +227,7 @@ class FakeArchive extends FakeServer {
     this.folderNamedAfterTrack = false,
     this.coverUpload = false,
     this.otherBandsGig = false,
+    this.clubMix = false,
   });
 
   @override
@@ -239,6 +245,8 @@ class FakeArchive extends FakeServer {
                     ? 'gala-freed-from-desire-vibegen-cover'
                     : otherBandsGig
                         ? '20180602ttglbg'
+                        : clubMix
+                        ? 'va-culture-dance-vol.-4'
                         : folderNamedAfterTrack
                         ? 'lionsinmyowngardena'
                         : 'gd1977-05-08'
@@ -261,6 +269,22 @@ class FakeArchive extends FakeServer {
             'name': 'Gala Freed from desire (Vibegen Cover).flac',
             'title': 'Gala Freed from desire (Vibegen Cover)',
             'length': '215.0',
+          },
+        ],
+      }));
+      await request.response.close();
+      return;
+    }
+
+    if (request.uri.path == '/metadata/va-culture-dance-vol.-4') {
+      request.response.write(jsonEncode({
+        'metadata': {
+          'title': 'VA Culture Dance Vol. 4 (Special Club) (1994)',
+        },
+        'files': [
+          {
+            'name': '04. Soft Cell - Tainted Love.flac',
+            'length': '534.91',
           },
         ],
       }));
@@ -861,6 +885,37 @@ Future<void> main(List<String> args) async {
   check('both searches ran, so the gig really was considered',
       otherBand.queries.length == 2, 'queries=${otherBand.queries}');
 
+  print('\nanother version of the track is not the track');
+  // A real upload: Soft Cell's "Tainted Love" is 2:33 on the album, and the
+  // Archive's best hit is a club compilation's 8:55 extended mix -- right
+  // artist, right name, so nothing else could tell it apart from the record.
+  final club = FakeArchive(clubMix: true);
+  await club.start();
+  storage.store.clear();
+  store.memberSet('cached',
+      await hetu.eval('[{"type": "archive", "base": "${club.base}"}]'));
+
+  final taintedLove = await hetu.eval('''
+    { "name": "Tainted Love", "isrc": "GBAAN8100013", "durationMs": 153000,
+      "artists": [{ "name": "Soft Cell" }] }
+  ''');
+  final clubMatches = await audioSource
+      .invoke('matches', positionalArgs: [taintedLove]) as List;
+  check('an 8:55 mix was not offered for a 2:33 track', clubMatches.isEmpty,
+      'matches=$clubMatches');
+
+  // Same file, asked for as the extended mix it is: the length is compared,
+  // not the file rejected outright.
+  storage.store.clear();
+  final extendedMix = await hetu.eval('''
+    { "name": "Tainted Love", "isrc": "", "durationMs": 540000,
+      "artists": [{ "name": "Soft Cell" }] }
+  ''');
+  final extendedMatches = await audioSource
+      .invoke('matches', positionalArgs: [extendedMix]) as List;
+  check('the same file still matches a track of its own length',
+      extendedMatches.length == 1, 'matches=$extendedMatches');
+
   print('\na title match credited to someone else is not the track');
   // hifi-api takes the whole query as one string and weighs the title, not the
   // artist: asking a live instance for "cars and girls cliff richard" returns
@@ -933,6 +988,7 @@ Future<void> main(List<String> args) async {
   await archive.stop();
   await looseArchive.stop();
   await otherBand.stop();
+  await club.stop();
 
   print('');
   if (failures.isEmpty) {

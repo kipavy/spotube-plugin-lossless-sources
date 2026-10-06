@@ -13,7 +13,9 @@ var KEEP = "abcdefghijklmnopqrstuvwxyz0123456789 "
 /// recording asked for. Matched whole, so "Discovery" is not read as a cover.
 ///
 /// "live" is deliberately absent. The Archive is largely live recordings --
-/// that is most of what it uniquely has -- so excluding them would empty it.
+/// that is most of what it uniquely has -- so excluding them by name would
+/// empty it. A live take that runs as long as the track asked for is kept;
+/// the length check is what tells the others apart.
 var FOREIGN_MARKERS = [
   "cover", "covers", "karaoke", "tribute", "remix", "remixes",
   "instrumental", "acapella", "nightcore", "mashup",
@@ -21,6 +23,11 @@ var FOREIGN_MARKERS = [
 
 var DIGITS = "0123456789"
 var NUMBER_SEPARATORS = ". -_)"
+
+/// How far a file's length may stray from the track's: a tenth of it, and
+/// never less than this many milliseconds, so rips with a little silence at
+/// either end still match a short track.
+var LENGTH_SLACK_MS = 15000
 
 /// How many search results to open per strategy. Each one costs a metadata
 /// request, and scanning stops at the first item that holds the track.
@@ -182,6 +189,25 @@ class ArchiveOrgSource {
     return false
   }
 
+  /// Whether a file runs about as long as the track asked for.
+  ///
+  /// Soft Cell's "Tainted Love" is 2:33 on the album; the Archive's best hit
+  /// for it was a club compilation's 8:55 extended mix, credited to Soft Cell
+  /// under the same name, so nothing else could tell it from the record.
+  /// Either length missing means there is nothing to compare, so it passes.
+  fun sameLength(length, track: Map) -> bool {
+    var wanted = track["durationMs"] ?? 0
+    var actual = toMilliseconds(length)
+    if (wanted <= 0 || actual <= 0) return true
+
+    var gap = actual - wanted
+    if (gap < 0) gap = -gap
+
+    var slack = wanted / 10
+    if (slack < LENGTH_SLACK_MS) slack = LENGTH_SLACK_MS
+    return gap <= slack
+  }
+
   fun artistOf(track: Map) -> String {
     if (track["artists"] == null || track["artists"].isEmpty) return ""
     var first = track["artists"][0]
@@ -260,6 +286,10 @@ class ArchiveOrgSource {
         // Nor is carrying the name and being found by the artist: the free
         // text matches a setlist naming whoever wrote the song.
         if (!credited([creator, metadata["title"], file["title"], name], artists)) continue
+
+        // Nor is being the right artist's: a club mix, a live take or an
+        // extended version carries the same name and the same credit.
+        if (!sameLength(file["length"], track)) continue
 
         found.add({
           "id": "archive:${identifier}|${name}",
