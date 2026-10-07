@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-10-07T00:42:56Z",
+  "updated": "2026-10-07T07:14:57Z",
   "sources": [
     {
       "type": "monochrome",
@@ -104,8 +104,8 @@
       "playable": true
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
-      "search": "ok",
-      "stream": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "stream": null,
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
@@ -119,8 +119,8 @@
       "playable": false
     },
     "hifi-api https://monochrome-api.samidy.com": {
-      "search": "401 Token refresh failed: Client error '403 Forbidden' for url 'https://auth.tidal.com/v1/oauth2/token'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
-      "stream": null,
+      "search": "ok",
+      "stream": "403 Upstream API error",
       "playable": false
     },
     "hifi-api https://tidal.kinoplus.online": {
