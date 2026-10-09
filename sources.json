@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-10-08T21:20:29Z",
+  "updated": "2026-10-09T02:10:11Z",
   "sources": [
     {
       "type": "monochrome",
@@ -104,8 +104,8 @@
       "playable": true
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
-      "search": "ok",
-      "stream": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "stream": null,
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
