@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-10-16T22:51:19Z",
+  "updated": "2026-10-17T01:20:08Z",
   "sources": [
     {
       "type": "monochrome",
@@ -139,7 +139,7 @@
       "playable": false
     },
     "hifi-api https://vogel.qqdl.site": {
-      "search": "-1 URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ce",
+      "search": "-1 URLError: <urlopen error _ssl.c:983: The handshake operation",
       "stream": null,
       "playable": false
     },
