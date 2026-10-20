@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-10-20T10:03:52Z",
+  "updated": "2026-10-20T15:05:58Z",
   "sources": [
     {
       "type": "monochrome",
@@ -134,7 +134,7 @@
       "playable": false
     },
     "hifi-api https://maus.qqdl.site": {
-      "search": "-1 URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ce",
+      "search": "-1 URLError: <urlopen error _ssl.c:983: The handshake operation",
       "stream": null,
       "playable": false
     },
@@ -149,7 +149,7 @@
       "playable": false
     },
     "hifi-api https://hund.qqdl.site": {
-      "search": "-1 URLError: <urlopen error [Errno 104] Connection reset by pee",
+      "search": "-1 URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ce",
       "stream": null,
       "playable": false
     },
