@@ -1,12 +1,7 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-10-23T07:31:24Z",
-  "sources": [
-    {
-      "type": "monochrome",
-      "base": "https://tracks.monochrome.st"
-    }
-  ],
+  "updated": "2026-10-23T13:25:46Z",
+  "sources": [],
   "candidates": [
     {
       "type": "monochrome",
@@ -100,8 +95,8 @@
   "status": {
     "monochrome https://tracks.monochrome.st": {
       "search": "ok",
-      "stream": "ok flac",
-      "playable": true
+      "stream": "429 not flac (b'{ \"e')",
+      "playable": false
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
       "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
@@ -209,6 +204,6 @@
       "playable": false
     }
   },
-  "playable_count": 1,
-  "announced_recovery": true
+  "playable_count": 0,
+  "announced_recovery": false
 }
