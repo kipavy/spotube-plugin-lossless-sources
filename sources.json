@@ -1,12 +1,7 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-10-28T08:30:16Z",
-  "sources": [
-    {
-      "type": "monochrome",
-      "base": "https://tracks.monochrome.st"
-    }
-  ],
+  "updated": "2026-10-28T16:01:45Z",
+  "sources": [],
   "candidates": [
     {
       "type": "monochrome",
@@ -100,8 +95,8 @@
   "status": {
     "monochrome https://tracks.monochrome.st": {
       "search": "ok",
-      "stream": "ok flac",
-      "playable": true
+      "stream": "429 not flac (b'{ \"e')",
+      "playable": false
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
       "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
@@ -119,8 +114,8 @@
       "playable": false
     },
     "hifi-api https://monochrome-api.samidy.com": {
-      "search": "401 Token refresh failed: Client error '403 Forbidden' for url 'https://auth.tidal.com/v1/oauth2/token'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
-      "stream": null,
+      "search": "ok",
+      "stream": "403 Upstream API error",
       "playable": false
     },
     "hifi-api https://tidal.kinoplus.online": {
@@ -209,6 +204,6 @@
       "playable": false
     }
   },
-  "playable_count": 1,
-  "announced_recovery": true
+  "playable_count": 0,
+  "announced_recovery": false
 }
