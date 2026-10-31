@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-10-31T02:23:28Z",
+  "updated": "2026-10-31T09:39:08Z",
   "sources": [],
   "candidates": [
     {
@@ -94,8 +94,8 @@
   ],
   "status": {
     "monochrome https://tracks.monochrome.st": {
-      "search": "ok",
-      "stream": "-1 not flac (b'TimeoutError: Th')",
+      "search": "522 Cloudflare could not establish a TCP connection to the origin server. The TCP handshake timed out, which may indicate the origin is overloaded, firewalling Cloudflare, or unreachable at the network level.",
+      "stream": null,
       "playable": false
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
