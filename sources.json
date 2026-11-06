@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-11-06T06:55:47Z",
+  "updated": "2026-11-06T15:04:06Z",
   "sources": [],
   "candidates": [
     {
@@ -94,8 +94,8 @@
   ],
   "status": {
     "monochrome https://tracks.monochrome.st": {
-      "search": "520 The origin web server sent a response that Cloudflare could not parse. This may indicate the origin returned an empty response, malformed HTTP headers, or an otherwise invalid response.",
-      "stream": null,
+      "search": "ok",
+      "stream": "-1 not flac (b'TimeoutError: Th')",
       "playable": false
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
