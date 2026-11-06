@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-11-06T00:16:40Z",
+  "updated": "2026-11-06T06:55:47Z",
   "sources": [],
   "candidates": [
     {
@@ -94,7 +94,7 @@
   ],
   "status": {
     "monochrome https://tracks.monochrome.st": {
-      "search": "522 Cloudflare could not establish a TCP connection to the origin server. The TCP handshake timed out, which may indicate the origin is overloaded, firewalling Cloudflare, or unreachable at the network level.",
+      "search": "520 The origin web server sent a response that Cloudflare could not parse. This may indicate the origin returned an empty response, malformed HTTP headers, or an otherwise invalid response.",
       "stream": null,
       "playable": false
     },
@@ -114,8 +114,8 @@
       "playable": false
     },
     "hifi-api https://monochrome-api.samidy.com": {
-      "search": "401 Token refresh failed: Client error '403 Forbidden' for url 'https://auth.tidal.com/v1/oauth2/token'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
-      "stream": null,
+      "search": "ok",
+      "stream": "403 Upstream API error",
       "playable": false
     },
     "hifi-api https://tidal.kinoplus.online": {
