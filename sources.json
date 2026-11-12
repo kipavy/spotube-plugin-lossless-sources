@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-11-11T21:56:54Z",
+  "updated": "2026-11-12T02:58:24Z",
   "sources": [
     {
       "type": "monochrome",
@@ -109,8 +109,8 @@
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
-      "search": "429 Upstream API error",
-      "stream": null,
+      "search": "ok",
+      "stream": "403 Upstream API error",
       "playable": false
     },
     "hifi-api https://api.monochrome.tf": {
