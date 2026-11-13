@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-11-12T11:06:44Z",
+  "updated": "2026-11-13T00:22:25Z",
   "sources": [
     {
       "type": "monochrome",
@@ -108,8 +108,8 @@
       "playable": true
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
-      "search": "ok",
-      "stream": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "stream": null,
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
@@ -123,8 +123,8 @@
       "playable": false
     },
     "hifi-api https://monochrome-api.samidy.com": {
-      "search": "429 Upstream API error",
-      "stream": null,
+      "search": "ok",
+      "stream": "403 Upstream API error",
       "playable": false
     },
     "hifi-api https://tidal.kinoplus.online": {
@@ -209,6 +209,11 @@
     },
     "hifi-api https://us-west.monochrome.tf": {
       "search": "-1 URLError: <urlopen error [Errno -2] Name or service not know",
+      "stream": null,
+      "playable": false
+    },
+    "hifi-api https://madeinheaven.032416.xyz": {
+      "search": "404 {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.5\"",
       "stream": null,
       "playable": false
     }
