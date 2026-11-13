@@ -1,0 +1,37 @@
+[versions]
+
+kotlin = "2.3.21"
+maven-publish = "0.34.0"
+kotlinx-coroutines = "1.10.2"
+kotlinx-serialization = "1.10.0"
+spotube-gradle = "0.2.0"
+spotube-plugin-interfaces = "0.1.0"
+ziplineVersion = "1.27.0"
+ktor = "3.4.3"
+cryptography = "0.6.0"
+semver = "2.1.0"
+
+[libraries]
+
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+spotube-plugin-interfaces = { module = "org.spotube.spotube:plugin_interfaces", version.ref = "spotube-plugin-interfaces" }
+zipline-core = { module = "app.cash.zipline:zipline", version.ref = "ziplineVersion" }
+ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+ktor-client-encoding = { module = "io.ktor:ktor-client-encoding", version.ref = "ktor" }
+ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
+cryptography-core = { module = "dev.whyoleg.cryptography:cryptography-core", version.ref = "cryptography" }
+cryptography-provider-optimal = { module = "dev.whyoleg.cryptography:cryptography-provider-optimal", version.ref = "cryptography" }
+semver = { module = "net.swiftzer.semver:semver", version.ref = "semver" }
+
+[plugins]
+
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish" }
+kotlinx-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+spotubeGradle = { id = "org.spotube.gradle-plugin", version.ref = "spotube-gradle" }
+zipline-gradle-plugin = { id = "app.cash.zipline", version.ref = "ziplineVersion" }

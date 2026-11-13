@@ -1,16 +1,20 @@
 name: Plugin Build
 
+# Every push and pull request is built and tested. A release is cut only by
+# running this workflow by hand: it tags the release with the version in
+# lossless_sources/build.gradle.kts, which is also what installed copies
+# compare against when they check for updates.
 on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
     inputs:
-      version:
-        type: string
-        description: 'Version (x.x.x)'
-        required: true
-        default: 'continuous'
+      release:
+        type: boolean
+        description: 'Publish a GitHub release with the built plugin'
+        default: true
 
 permissions:
   contents: write
@@ -22,48 +26,72 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Install JDK 21
+        uses: actions/setup-java@v4
         with:
-          channel: stable
-          flutter-version: 3.35.2
+          distribution: temurin
+          java-version: '21'
 
-      # Pinned: 0.1.2 and later compile hetu_script 0.6 bytecode, which the
-      # 0.4.2 runtime Spotube ships refuses to load.
-      - name: Install dependencies
-        run: dart pub global activate hetu_script_dev_tools 0.1.0+2
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Check runtime scope resolution
-        run: python3 check_scope.py
+      # Fake hosts for every source: routing, failover, retries, the source list
+      # cache and the update check.
+      - name: Run tests
+        run: ./gradlew :lossless_sources:jvmTest --stacktrace
 
-      - name: Run build
-        run: make
+      - name: Package plugin
+        run: ./gradlew :lossless_sources:packageProductionPlugin --stacktrace
 
-      - name: Run the runtime harness
-        run: make test
-
-      - name: Archive plugin
-        run: make archive
-        shell: bash
+      # Not plugin.smplug: Spotube 5 plugins (1.x) update only to an asset with
+      # exactly that name, and must not be offered a build they cannot load.
+      # Spotube 6 takes any *.smplug asset.
+      - name: Name the package
+        run: cp lossless_sources/build/distributions/plugin-production.smplug lossless-sources.smplug
 
       - name: Verify package contents
-        run: make verify
+        run: |
+          python3 - <<'PY'
+          import json, sys, zipfile
+          archive = zipfile.ZipFile("lossless-sources.smplug")
+          names = archive.namelist()
+          print("package contents:", names)
+          missing = [f for f in ("plugin.json", "logo.png") if f not in names]
+          if not any(n.endswith(".zipline") for n in names):
+              missing.append("*.zipline")
+          if missing:
+              sys.exit(f"MISSING FROM PACKAGE: {missing}")
+          meta = json.loads(archive.read("plugin.json"))
+          print(json.dumps(meta, indent=2))
+          PY
+
+      - name: Read plugin version
+        id: meta
+        run: |
+          version=$(awk '/spotubePlugin[[:space:]]*\{/ { inside = 1 }
+                         inside && $1 == "version" { gsub(/"/, "", $3); print $3; exit }' lossless_sources/build.gradle.kts)
+          if [ -z "$version" ]; then
+            echo "::error::No version in the spotubePlugin {} block"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Upload plugin archive
         uses: actions/upload-artifact@v4
         with:
-          name: plugin
-          path: build/plugin.smplug
+          name: lossless-sources-${{ steps.meta.outputs.version }}
+          path: lossless-sources.smplug
+          if-no-files-found: error
 
-      - name: Upload to release (${{ github.event.inputs.version }})
-        if: github.event_name == 'workflow_dispatch'
+      - name: Publish release ${{ steps.meta.outputs.version }}
+        if: github.event_name == 'workflow_dispatch' && inputs.release
         uses: ncipollo/release-action@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.event.inputs.version }}
+          tag: ${{ steps.meta.outputs.version }}
+          commit: ${{ github.sha }}
           omitBodyDuringUpdate: true
           omitNameDuringUpdate: true
-          omitPrereleaseDuringUpdate: true
           allowUpdates: true
           replacesArtifacts: true
-          artifacts: build/plugin.smplug
+          artifacts: lossless-sources.smplug

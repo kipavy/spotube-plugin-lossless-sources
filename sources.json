@@ -95,6 +95,10 @@
     {
       "type": "hifi-api",
       "base": "https://us-west.monochrome.tf"
+    },
+    {
+      "type": "hifi-api",
+      "base": "https://madeinheaven.032416.xyz"
     }
   ],
   "status": {
