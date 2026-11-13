@@ -129,6 +129,17 @@ class MatchingTest {
     }
 
     @Test
+    fun repeatedWordsDoNotMakeAnotherSongLookClose() {
+        val track = track("Clair Obscur: Expedition 33 (Original Soundtrack) 41 - Gestral Village - Gestral Merchant", "Lorien Testard", durationMs = 198_000)
+        val found = listOf(
+            match("golgra", "Gestral Village - Golgra", "Lorien Testard", 194_000),
+            // The catalogue's own typo: still the song.
+            match("right", "Gestral ViIllage - Gestral Merchant", "Lorien Testard", 197_000),
+        )
+        assertEquals(listOf("right"), fitting(found, track).map { it.ref })
+    }
+
+    @Test
     fun videoDecorationAndArtistPrefixAreIgnored() {
         assertTrue(sameTitle("Aline", "Clair Obscur: Expedition 33 | Aline [Official Music Video]"))
         assertTrue(sameTitle("One More Time", "Daft Punk - One More Time (Official Video)", listOf("Daft Punk")))

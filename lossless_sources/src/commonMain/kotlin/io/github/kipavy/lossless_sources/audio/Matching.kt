@@ -118,13 +118,26 @@ fun titleWords(value: String): List<String> {
     return kept.split(' ').filter { it.isNotEmpty() }
 }
 
-/** Share of the longer title's words the other title also has, 0 to 1. */
+/**
+ * Share of the longer title's words the other title also has, 0 to 1. A word
+ * counts as often as it appears: "Gestral Village - Gestral Merchant" shares
+ * two of four words with "Gestral Village - Golgra", not two of three, while
+ * the catalogue typo "Gestral ViIllage - Gestral Merchant" still shares three.
+ */
 fun titleOverlap(a: String, b: String): Double {
     val x = titleWords(a)
     val y = titleWords(b)
     if (x.isEmpty() || y.isEmpty()) return 0.0
-    val shared = x.toSet().intersect(y.toSet()).size
-    return shared.toDouble() / maxOf(x.toSet().size, y.toSet().size)
+    val left = y.groupingBy { it }.eachCount().toMutableMap()
+    var shared = 0
+    for (word in x) {
+        val count = left[word] ?: 0
+        if (count > 0) {
+            shared++
+            left[word] = count - 1
+        }
+    }
+    return shared.toDouble() / maxOf(x.size, y.size)
 }
 
 /** How much of the title two titles must share when neither extends the other. */
