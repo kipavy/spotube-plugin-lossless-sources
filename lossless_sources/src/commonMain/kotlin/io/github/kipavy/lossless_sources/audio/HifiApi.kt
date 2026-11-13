@@ -27,7 +27,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 class HifiApi(
     private val net: Net,
     private val retryDelaysMs: List<Long> = listOf(2_000, 4_000, 8_000),
-) : LosslessSource {
+) : TrackSource {
     override val type = "hifi-api"
 
     override suspend fun search(query: String, bases: List<String>): List<Match> {
