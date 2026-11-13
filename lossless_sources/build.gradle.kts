@@ -18,8 +18,7 @@ spotubePlugin {
     apiVersion = "0.1.0"
     description = "Lossless FLAC audio source for Spotube that needs no account and no configuration. " +
         "Routes each track to whichever public source can play it: Monochrome first, then any working " +
-        "hifi-api (Tidal) instance, from a source list an hourly probe keeps current, and to YouTube " +
-        "(lossy) only when no lossless source has the track. " +
+        "hifi-api (Tidal) instance, from a source list an hourly probe keeps current. " +
         "Set Playback > streaming format to FLAC."
     author = "kipavy"
     contact = "https://github.com/kipavy/spotube-plugin-lossless-sources/issues"

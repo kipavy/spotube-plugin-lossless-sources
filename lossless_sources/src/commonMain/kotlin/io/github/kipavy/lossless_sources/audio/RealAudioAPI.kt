@@ -27,25 +27,18 @@ private const val STREAM_ATTEMPTS = 3
 private const val MAX_RESULTS = 5
 
 /**
- * Routes a track to whichever lossless source can actually play it, and to
- * YouTube when none can.
+ * Routes a track to whichever lossless source can actually play it.
  *
  * Sources are tried in the order the published list gives them and the first
  * one that both has the recording and serves a stream for it wins, so the list
  * is also the preference order. A source that finds the track but cannot serve
  * it -- a Tidal proxy whose account was blocked answers searches fine -- does
  * not end the lookup; the next source is asked.
- *
- * [fallback] is asked only once every lossless source has failed, so a lossy
- * stream never wins over a lossless one. It is not in the published list: the
- * probe runs from GitHub's servers, which YouTube treats as bots, and would
- * drop a source that works fine from a listener's own connection.
  */
 class RealAudioAPI(
     net: Net,
     private val store: SourceStore,
     private val sources: List<TrackSource> = listOf(Monochrome(net), HifiApi(net)),
-    private val fallback: TrackSource? = YouTube(net),
 ) : AudioAPI {
     private val logger = Logger("LosslessSources")
 
@@ -58,22 +51,15 @@ class RealAudioAPI(
                 AudioQuality.Lossless(sampleRate = 44_100, channels = 2),
             ),
         ),
-        // A hifi-api instance on a lower Tidal tier, or the YouTube fallback.
+        // Only a hifi-api instance on a lower Tidal tier serves this.
         AudioFormat(
             codec = "aac",
             container = "mp4",
-            qualities = listOf(AudioQuality.Lossy(bitrate = 320_000), AudioQuality.Lossy(bitrate = 128_000)),
-        ),
-        // The YouTube fallback.
-        AudioFormat(
-            codec = "opus",
-            container = "webm",
-            qualities = listOf(AudioQuality.Lossy(bitrate = 160_000)),
+            qualities = listOf(AudioQuality.Lossy(bitrate = 320_000)),
         ),
     )
 
-    private fun sourceFor(type: String): TrackSource? =
-        sources.firstOrNull { it.type == type } ?: fallback?.takeIf { it.type == type }
+    private fun sourceFor(type: String): TrackSource? = sources.firstOrNull { it.type == type }
 
     /**
      * Source types in published order, each with its hosts. A type this version
@@ -83,7 +69,7 @@ class RealAudioAPI(
     private suspend fun groups(): List<Pair<TrackSource, List<String>>> {
         val list = store.resolve()
         return list.map { it.type }.distinct().mapNotNull { type ->
-            val source = sources.firstOrNull { it.type == type } ?: return@mapNotNull null
+            val source = sourceFor(type) ?: return@mapNotNull null
             source to list.filter { it.type == type }.map { it.base }
         }
     }
@@ -96,10 +82,6 @@ class RealAudioAPI(
             lookup(source, bases, track, queries)?.let { return it }
         }
         logger.w { "'${track.title}': no lossless source can play it" }
-
-        val last = fallback ?: return emptyList()
-        lookup(last, emptyList(), track, queries)?.let { return it }
-        logger.w { "'${track.title}': ${last.type} cannot play it either" }
         return emptyList()
     }
 

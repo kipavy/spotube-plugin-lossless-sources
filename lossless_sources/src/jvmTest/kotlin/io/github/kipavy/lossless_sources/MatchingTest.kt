@@ -1,11 +1,8 @@
 package io.github.kipavy.lossless_sources
 
 import io.github.kipavy.lossless_sources.audio.Match
-import io.github.kipavy.lossless_sources.audio.YouTube
 import io.github.kipavy.lossless_sources.audio.fitting
 import io.github.kipavy.lossless_sources.audio.sameTitle
-import io.github.kipavy.lossless_sources.core.Net
-import io.github.kipavy.lossless_sources.core.get
 import io.github.kipavy.lossless_sources.audio.searchQueries
 import io.github.kipavy.lossless_sources.audio.simplify
 import io.github.kipavy.lossless_sources.core.encode
@@ -101,17 +98,5 @@ class MatchingTest {
         assertTrue(sameTitle("夜に駆ける", "夜に駆ける"))
         assertFalse(sameTitle("Sirène - Rouge d'Iris", "Sirène - Robe de Jour"))
         assertFalse(sameTitle("夜に駆ける", "群青"))
-    }
-
-    @Test
-    fun youtubeSongRowIsParsed() {
-        val match = YouTube.toMatch(Net.parseLenient(ytSong("vid1", "One More Time", "Daft Punk", "5:20"))!!["musicResponsiveListItemRenderer"]!!)!!
-        assertEquals("vid1", match.ref)
-        assertEquals(listOf("Daft Punk"), match.artists)
-        assertEquals("Discovery", match.album)
-        assertEquals(320_000, match.durationMs)
-        assertEquals("https://i.test/l.jpg", match.artwork)
-        assertEquals(3_723_000, YouTube.parseDuration("1:02:03"))
-        assertEquals(null, YouTube.parseDuration("12 M views"))
     }
 }

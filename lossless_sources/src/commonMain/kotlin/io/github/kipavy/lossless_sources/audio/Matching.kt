@@ -16,7 +16,7 @@ data class Match(
     val externalUri: String?,
 )
 
-/** A catalogue reachable through one or more interchangeable hosts: a lossless one, or the YouTube fallback. */
+/** A lossless catalogue reachable through one or more interchangeable hosts. */
 interface TrackSource {
     /** The `type` this source has in sources.json, also the prefix of its match ids. */
     val type: String

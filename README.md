@@ -14,9 +14,12 @@ screen. Install it, select it as your audio plugin, done.
 > stream a hifi-api instance sometimes offers next to the FLAC one.
 
 > [!IMPORTANT]
-> **2.x is for Spotube 6.** Since 2.1.0 a track that no lossless source has
-> plays from **YouTube** instead (Opus ~160 kbps or AAC 128 kbps), as 1.x did.
-> Lossless always wins when a lossless source has the track.
+> **2.x is for Spotube 6 and is lossless only.** Spotube 6 replaced its plugin
+> system and no longer lets a plugin use its built-in YouTube engine, so the
+> YouTube fallback of 1.x is gone for now
+> ([#5](https://github.com/kipavy/spotube-plugin-lossless-sources/issues/5)).
+> A track that no lossless source has will not play while this plugin is
+> selected; switch the audio plugin back to the built-in YouTube one for it.
 >
 > **Still on Spotube 5?** Use
 > [1.3.1](https://github.com/kipavy/spotube-plugin-lossless-sources/releases/tag/1.3.1),
@@ -36,9 +39,6 @@ first available:
    chart pop, French rap, reggaeton, electronic and classic rock: every track
    tried was found and streamed as real FLAC, several of them 24-bit.
 2. **Tidal**, if any hifi-api instance is alive — lossless, ISRC-exact.
-3. **YouTube**, only when neither has the track — lossy. Spotube 6 no longer
-   lends plugins its YouTube engine, so the plugin asks YouTube Music itself
-   (see [YouTube fallback](#youtube-fallback)).
 
 **Why Monochrome works when hifi-api does not.** Every public hifi-api
 instance signs into Tidal with its own shared account, and Tidal has been
@@ -135,7 +135,6 @@ the package for you:
 | Length check | A match more than 15 s or 10 % off the track's length is another version (extended mix, live take) and is skipped. A match with the track's own ISRC fails only when it is off by a factor of two |
 | Stream check | The best match's stream is resolved before answering. A source that has the track but serves nothing hands over to the next source |
 | Failover | Within a source, hosts are tried in order; a sleeping or blocked one falls through to the next |
-| YouTube fallback | Asked only after every lossless source has failed, with the same filtering |
 | `getStreamsOfAudioSource` | Spotube saves each match and later asks for its streams again. The id (`v2:<source>:<id>:<duration ms>`) is handed back to its source; if that fails, Spotube matches the track again. Ids from before 2.1.0 have no `v2` and are refused on purpose: 2.0 could save another song by the same artist, and refusing makes Spotube match those tracks again |
 
 **Monochrome** searches `/search/tracks?q=<title artists>`, keeps results that
@@ -160,26 +159,6 @@ first, then reads `/track/` for each quality and decodes the manifest.
 - **`202`** means all of an instance's playback accounts are busy: retried on
   the same host after 2 s, 4 s and 8 s, then the next host.
 
-## YouTube fallback
-
-The plugin talks to YouTube's InnerTube API through Spotube's HTTP client:
-
-- **Search** — `music.youtube.com/youtubei/v1/search` as the YouTube Music web
-  client, filtered to songs, so results are the official audio with proper
-  artist credits rather than lyric videos and covers.
-- **Streams** — `www.youtube.com/youtubei/v1/player` as a client YouTube still
-  hands plain stream URLs to (Android VR, then iOS), so there is no signature
-  to decipher and no PO token. Audio-only formats with a plain URL are kept,
-  best bitrate first, and the best one is checked with a one-byte read before
-  answering; a client YouTube refuses hands over to the next.
-
-YouTube is not in `sources.json`: the probe runs on GitHub's servers, which
-YouTube treats as bots, so it would unpublish a source that works fine from a
-listener's connection. **YouTube changes which clients get plain URLs every
-few months.** When the fallback stops playing, `PLAYER_CLIENTS` in
-[`YouTube.kt`](lossless_sources/src/commonMain/kotlin/io/github/kipavy/lossless_sources/audio/YouTube.kt)
-is what to update, the same way yt-dlp and NewPipe do.
-
 ## Quality
 
 From Monochrome: the file as it is stored, 16-bit/44.1kHz up to
@@ -192,10 +171,6 @@ never overstates.
 From a hifi-api instance: whatever tier that instance's Tidal account allows. A
 lower-tier account returns AAC 320 even when lossless is requested; the plugin
 reports it as such.
-
-From YouTube: lossy, Opus around 160 kbps or AAC 128 kbps. Spotube picks the
-stream closest to your streaming format, and with FLAC selected it still plays
-one of these rather than nothing.
 
 ## Adding a source
 

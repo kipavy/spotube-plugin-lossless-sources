@@ -3,7 +3,6 @@ package io.github.kipavy.lossless_sources
 import io.github.kipavy.lossless_sources.audio.HifiApi
 import io.github.kipavy.lossless_sources.audio.Monochrome
 import io.github.kipavy.lossless_sources.audio.RealAudioAPI
-import io.github.kipavy.lossless_sources.audio.YouTube
 import io.github.kipavy.lossless_sources.core.SourceStore
 import kotlinx.coroutines.test.runTest
 import org.spotube.plugin_interfaces.host_apis.HttpMethod
@@ -23,7 +22,7 @@ class AudioRoutingTest {
         http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("monochrome" to MONO, "hifi-api" to HIFI))
         val net = net(http)
         val store = SourceStore(net, FakeStorage(), LIST_URL)
-        return RealAudioAPI(net, store, listOf(Monochrome(net, emptyList()), HifiApi(net, emptyList())), fallback = null)
+        return RealAudioAPI(net, store, listOf(Monochrome(net, emptyList()), HifiApi(net, emptyList())))
     }
 
     @Test
@@ -83,7 +82,7 @@ class AudioRoutingTest {
         }
         val net = net(http)
         http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("hifi-api" to HIFI))
-        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(HifiApi(net, listOf(0L))), fallback = null)
+        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(HifiApi(net, listOf(0L))))
 
         val result = api.getStreamsByTrack(daftPunk)
 
@@ -152,65 +151,5 @@ class AudioRoutingTest {
 
         assertTrue(api(http).getStreamsByTrack(wanted).isEmpty())
         assertTrue(http.calls.none { it == "HEAD $MONO/track/2" || it == "HEAD $MONO/track/3" })
-    }
-
-    @Test
-    fun youtubePlaysOnlyWhenNoLosslessSourceCan() = runTest {
-        val http = FakeHttp()
-        http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("monochrome" to MONO))
-        http.json(HttpMethod.Get, "$MONO/search/tracks", body = """{"tracks":[]}""")
-        http.json(HttpMethod.Post, "${YouTube.MUSIC}/youtubei/v1/search", body = ytSearch(ytSong("vid1", "One More Time", "Daft Punk", "5:20")))
-        http.json(HttpMethod.Post, "${YouTube.WWW}/youtubei/v1/player", body = ytPlayer("https://rr.test/251", "https://rr.test/140"))
-        http.status(HttpMethod.Get, "https://rr.test/251", 206)
-        val net = net(http)
-        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(Monochrome(net, emptyList())), YouTube(net))
-
-        val streamed = assertIs<AudioSource.Streamed>(api.getStreamsByTrack(daftPunk).single())
-
-        assertEquals("v2:youtube:vid1:320000", streamed.id)
-        val best = assertIs<AudioStream.Lossy>(streamed.streams.first())
-        assertEquals("opus", best.codec)
-        assertEquals("webm", best.container)
-        assertEquals(listOf("https://rr.test/251", "https://rr.test/140"), streamed.streams.map { it.url })
-        assertTrue(http.calls.indexOfFirst { it.startsWith("GET $MONO") } < http.calls.indexOfFirst { it.startsWith("POST") })
-    }
-
-    @Test
-    fun youtubeIsNotAskedWhenALosslessSourcePlays() = runTest {
-        val http = FakeHttp()
-        http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("monochrome" to MONO))
-        http.json(HttpMethod.Get, "$MONO/search/tracks", body = """{"tracks":[${monochromeItem("7", "One More Time", "Daft Punk", 320_357)}]}""")
-        http.status(HttpMethod.Head, "$MONO/track/7", 200)
-        val net = net(http)
-        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(Monochrome(net, emptyList())), YouTube(net))
-
-        assertIs<AudioStream.Lossless>(assertIs<AudioSource.Streamed>(api.getStreamsByTrack(daftPunk).first()).streams.single())
-        assertTrue(http.calls.none { it.startsWith("POST") })
-    }
-
-    @Test
-    fun youtubeClientThatIsRefusedHandsOverToTheNext() = runTest {
-        val http = FakeHttp()
-        var players = 0
-        http.on(HttpMethod.Post, "${YouTube.WWW}/youtubei/v1/player") {
-            players++
-            if (players == 1) HttpResponse(200, emptyMap(), """{"playabilityStatus":{"status":"LOGIN_REQUIRED"}}""")
-            else HttpResponse(200, emptyMap(), ytPlayer("https://rr.test/251"))
-        }
-        http.status(HttpMethod.Get, "https://rr.test/251", 200)
-
-        val streams = YouTube(net(http)).streams("vid1", 0, emptyList())
-
-        assertEquals(2, players)
-        assertEquals("https://rr.test/251", streams.single().url)
-    }
-
-    @Test
-    fun youtubeStreamTheCdnRefusesIsNotHandedOver() = runTest {
-        val http = FakeHttp()
-        http.json(HttpMethod.Post, "${YouTube.WWW}/youtubei/v1/player", body = ytPlayer("https://rr.test/251"))
-        http.status(HttpMethod.Get, "https://rr.test/251", 403)
-
-        assertTrue(YouTube(net(http)).streams("vid1", 0, emptyList()).isEmpty())
     }
 }
