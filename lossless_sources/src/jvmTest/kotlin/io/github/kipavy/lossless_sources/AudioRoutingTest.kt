@@ -38,7 +38,7 @@ class AudioRoutingTest {
         val result = api(http).getStreamsByTrack(daftPunk)
 
         val streamed = assertIs<AudioSource.Streamed>(result.single())
-        assertEquals("v2:monochrome:7:320357", streamed.id)
+        assertEquals("v3:monochrome:7:320357", streamed.id)
         assertEquals(1.0f, streamed.confidence)
         val stream = assertIs<AudioStream.Lossless>(streamed.streams.single())
         assertEquals("$MONO/track/7", stream.url)
@@ -62,7 +62,7 @@ class AudioRoutingTest {
         val result = api(http).getStreamsByTrack(daftPunk)
 
         val streamed = assertIs<AudioSource.Streamed>(result.first())
-        assertEquals("v2:hifi-api:42:320000", streamed.id)
+        assertEquals("v3:hifi-api:42:320000", streamed.id)
         assertEquals("https://resources.tidal.com/images/aa/bb/cc/640x640.jpg", streamed.thumbnails.single().url)
         // Same URL for two qualities is kept once; the AAC one is a separate stream.
         assertEquals(2, streamed.streams.size)
@@ -113,7 +113,7 @@ class AudioRoutingTest {
     fun savedMatchIsResolvedAgainstItsSource() = runTest {
         val http = FakeHttp()
         http.status(HttpMethod.Head, "$MONO/track/7", 200, mapOf("content-length" to "40000000"))
-        val saved = AudioSource.Basic("v2:monochrome:7:320357", "One More Time", "Daft Punk", null, emptyList(), null, 1f)
+        val saved = AudioSource.Basic("v3:monochrome:7:320357", "One More Time", "Daft Punk", null, emptyList(), null, 1f)
 
         val streamed = api(http).getStreamsOfAudioSource(saved).single()
 
@@ -123,7 +123,7 @@ class AudioRoutingTest {
     @Test
     fun matchFromAnUnknownSourceAsksSpotubeToRematch() = runTest {
         val http = FakeHttp()
-        val saved = AudioSource.Basic("v2:napster:abc", "x", null, null, emptyList(), null, 1f)
+        val saved = AudioSource.Basic("v3:napster:abc", "x", null, null, emptyList(), null, 1f)
         assertTrue(api(http).getStreamsOfAudioSource(saved).isEmpty())
     }
 
@@ -133,6 +133,9 @@ class AudioRoutingTest {
         http.status(HttpMethod.Head, "$MONO/track/7", 200, mapOf("content-length" to "40000000"))
         val saved = AudioSource.Basic("monochrome:7:320357", "Monoco", "Lorien Testard", null, emptyList(), null, 1f)
         assertTrue(api(http).getStreamsOfAudioSource(saved).isEmpty())
+        // 2.1.0 could still pair a YouTube-style title with the wrong song.
+        val fromTwoOne = AudioSource.Basic("v2:monochrome:7:320357", "Clair-Obscur", "Lorien Testard", null, emptyList(), null, 1f)
+        assertTrue(api(http).getStreamsOfAudioSource(fromTwoOne).isEmpty())
     }
 
     @Test
