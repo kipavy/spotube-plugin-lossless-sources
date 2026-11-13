@@ -11,8 +11,14 @@ import org.spotube.plugin_interfaces.plugin_apis.audio.AudioStream
 import org.spotube.plugin_interfaces.plugin_apis.metadata.common.Thumbnail
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 
-/** Match ids are `<source type>:<reference>:<duration ms>`, so a match can go back to the source that found it. */
+/**
+ * Match ids are `v2:<source type>:<reference>:<duration ms>`, so a match can go
+ * back to the source that found it. Spotube keeps the match it was handed for
+ * each track; the version prefix lets a release that matches better disown
+ * the matches older ones made, so Spotube matches those tracks again.
+ */
 private const val ID_SEPARATOR = ":"
+private const val ID_VERSION = "v2"
 
 /** How many fitting matches of one source are tried for a stream before moving on to the next source. */
 private const val STREAM_ATTEMPTS = 3
@@ -32,7 +38,7 @@ private const val MAX_RESULTS = 5
 class RealAudioAPI(
     net: Net,
     private val store: SourceStore,
-    private val sources: List<LosslessSource> = listOf(Monochrome(net), HifiApi(net)),
+    private val sources: List<TrackSource> = listOf(Monochrome(net), HifiApi(net)),
 ) : AudioAPI {
     private val logger = Logger("LosslessSources")
 
@@ -53,14 +59,14 @@ class RealAudioAPI(
         ),
     )
 
-    private fun sourceFor(type: String): LosslessSource? = sources.firstOrNull { it.type == type }
+    private fun sourceFor(type: String): TrackSource? = sources.firstOrNull { it.type == type }
 
     /**
      * Source types in published order, each with its hosts. A type this version
      * does not know is skipped rather than fatal, so a new source can be listed
      * before every installed plugin understands it.
      */
-    private suspend fun groups(): List<Pair<LosslessSource, List<String>>> {
+    private suspend fun groups(): List<Pair<TrackSource, List<String>>> {
         val list = store.resolve()
         return list.map { it.type }.distinct().mapNotNull { type ->
             val source = sourceFor(type) ?: return@mapNotNull null
@@ -73,30 +79,44 @@ class RealAudioAPI(
         val queries = searchQueries(track)
 
         for ((source, bases) in groups()) {
-            val found = firstFitting(source, bases, track, queries)
-            if (found.isEmpty()) continue
-
-            // Resolve the stream here rather than leaving it to Spotube, so a
-            // source that has the track but cannot serve it hands over to the
-            // next source instead of failing the track.
-            for (match in found.take(STREAM_ATTEMPTS)) {
-                val streams = safeStreams(source, match.ref, match.durationMs, bases)
-                if (streams.isEmpty()) continue
-
-                logger.i { "'${track.title}': playing ${source.type} ${match.ref} (${streams.size} stream(s))" }
-                val alternatives = found.filter { it != match }.take(MAX_RESULTS - 1)
-                return listOf(match.toStreamed(track, streams)) + alternatives.map { it.toBasic(track) }
-            }
-            logger.w { "'${track.title}': ${source.type} has it but served no stream" }
+            lookup(source, bases, track, queries)?.let { return it }
         }
-
         logger.w { "'${track.title}': no lossless source can play it" }
         return emptyList()
     }
 
+    /**
+     * The match to play from one source, with its other fitting matches as
+     * alternatives, or null when this source cannot play the track.
+     *
+     * The stream is resolved here rather than left to Spotube, so a source
+     * that has the track but cannot serve it hands over to the next source
+     * instead of failing the track.
+     */
+    private suspend fun lookup(
+        source: TrackSource,
+        bases: List<String>,
+        track: MetadataTrack,
+        queries: List<String>,
+    ): List<AudioSource>? {
+        val found = firstFitting(source, bases, track, queries)
+        if (found.isEmpty()) return null
+
+        for (match in found.take(STREAM_ATTEMPTS)) {
+            val streams = safeStreams(source, match.ref, match.durationMs, bases)
+            if (streams.isEmpty()) continue
+
+            logger.i { "'${track.title}': playing ${source.type} ${match.ref} '${match.title}' (${streams.size} stream(s))" }
+            val alternatives = found.filter { it != match }.take(MAX_RESULTS - 1)
+            return listOf(match.toStreamed(track, streams)) + alternatives.map { it.toBasic(track) }
+        }
+        logger.w { "'${track.title}': ${source.type} has it but served no stream" }
+        return null
+    }
+
     /** The fitting matches for the first query that has any, ISRC hits first. */
     private suspend fun firstFitting(
-        source: LosslessSource,
+        source: TrackSource,
         bases: List<String>,
         track: MetadataTrack,
         queries: List<String>,
@@ -116,7 +136,7 @@ class RealAudioAPI(
     }
 
     private suspend fun safeStreams(
-        source: LosslessSource,
+        source: TrackSource,
         ref: String,
         durationMs: Long,
         bases: List<String>,
@@ -134,11 +154,12 @@ class RealAudioAPI(
      * which reaches whichever source works now.
      */
     override suspend fun getStreamsOfAudioSource(source: AudioSource.Basic): List<AudioSource.Streamed> {
-        val parts = source.id.split(ID_SEPARATOR, limit = 3)
-        if (parts.size < 2) return emptyList()
-        val provider = sourceFor(parts[0]) ?: return emptyList()
-        val ref = parts[1]
-        val durationMs = parts.getOrNull(2)?.toLongOrNull() ?: 0L
+        val parts = source.id.split(ID_SEPARATOR, limit = 4)
+        // A match from before the current matching rules; may be the wrong song.
+        if (parts.size < 3 || parts[0] != ID_VERSION) return emptyList()
+        val provider = sourceFor(parts[1]) ?: return emptyList()
+        val ref = parts[2]
+        val durationMs = parts.getOrNull(3)?.toLongOrNull() ?: 0L
 
         val streams = safeStreams(provider, ref, durationMs, store.basesFor(provider.type))
         if (streams.isEmpty()) {
@@ -159,7 +180,7 @@ class RealAudioAPI(
         )
     }
 
-    private fun Match.id(): String = listOf(source, ref, durationMs.toString()).joinToString(ID_SEPARATOR)
+    private fun Match.id(): String = listOf(ID_VERSION, source, ref, durationMs.toString()).joinToString(ID_SEPARATOR)
 
     /** An ISRC hit is the recording itself; anything else was matched on credit, title and length. */
     private fun Match.confidence(track: MetadataTrack): Float {

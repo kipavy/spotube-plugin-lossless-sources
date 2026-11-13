@@ -38,7 +38,7 @@ class AudioRoutingTest {
         val result = api(http).getStreamsByTrack(daftPunk)
 
         val streamed = assertIs<AudioSource.Streamed>(result.single())
-        assertEquals("monochrome:7:320357", streamed.id)
+        assertEquals("v2:monochrome:7:320357", streamed.id)
         assertEquals(1.0f, streamed.confidence)
         val stream = assertIs<AudioStream.Lossless>(streamed.streams.single())
         assertEquals("$MONO/track/7", stream.url)
@@ -62,7 +62,7 @@ class AudioRoutingTest {
         val result = api(http).getStreamsByTrack(daftPunk)
 
         val streamed = assertIs<AudioSource.Streamed>(result.first())
-        assertEquals("hifi-api:42:320000", streamed.id)
+        assertEquals("v2:hifi-api:42:320000", streamed.id)
         assertEquals("https://resources.tidal.com/images/aa/bb/cc/640x640.jpg", streamed.thumbnails.single().url)
         // Same URL for two qualities is kept once; the AAC one is a separate stream.
         assertEquals(2, streamed.streams.size)
@@ -113,7 +113,7 @@ class AudioRoutingTest {
     fun savedMatchIsResolvedAgainstItsSource() = runTest {
         val http = FakeHttp()
         http.status(HttpMethod.Head, "$MONO/track/7", 200, mapOf("content-length" to "40000000"))
-        val saved = AudioSource.Basic("monochrome:7:320357", "One More Time", "Daft Punk", null, emptyList(), null, 1f)
+        val saved = AudioSource.Basic("v2:monochrome:7:320357", "One More Time", "Daft Punk", null, emptyList(), null, 1f)
 
         val streamed = api(http).getStreamsOfAudioSource(saved).single()
 
@@ -123,7 +123,33 @@ class AudioRoutingTest {
     @Test
     fun matchFromAnUnknownSourceAsksSpotubeToRematch() = runTest {
         val http = FakeHttp()
-        val saved = AudioSource.Basic("youtube:abc", "x", null, null, emptyList(), null, 1f)
+        val saved = AudioSource.Basic("v2:napster:abc", "x", null, null, emptyList(), null, 1f)
         assertTrue(api(http).getStreamsOfAudioSource(saved).isEmpty())
+    }
+
+    @Test
+    fun matchSavedByAnOlderReleaseIsRematched() = runTest {
+        val http = FakeHttp()
+        http.status(HttpMethod.Head, "$MONO/track/7", 200, mapOf("content-length" to "40000000"))
+        val saved = AudioSource.Basic("monochrome:7:320357", "Monoco", "Lorien Testard", null, emptyList(), null, 1f)
+        assertTrue(api(http).getStreamsOfAudioSource(saved).isEmpty())
+    }
+
+    @Test
+    fun anotherTrackByTheSameArtistIsNeverPlayed() = runTest {
+        val http = FakeHttp()
+        val wanted = track("Sirène - Rouge d'Iris", "Lorien Testard")
+        http.json(
+            HttpMethod.Get, "$MONO/search/tracks",
+            body = """{"tracks":[${monochromeItem("1", "Sirène - Rouge d'Iris", "Lorien Testard", 199_000)},""" +
+                """${monochromeItem("2", "Sirène - Robe de Jour", "Lorien Testard", 141_000)},""" +
+                """${monochromeItem("3", "Monoco", "Lorien Testard", 190_000)}]}""",
+        )
+        // The right file is down: the others must not stand in for it.
+        http.status(HttpMethod.Head, "$MONO/track/1", 404)
+        http.status(HttpMethod.Head, "$MONO/track/", 200)
+
+        assertTrue(api(http).getStreamsByTrack(wanted).isEmpty())
+        assertTrue(http.calls.none { it == "HEAD $MONO/track/2" || it == "HEAD $MONO/track/3" })
     }
 }

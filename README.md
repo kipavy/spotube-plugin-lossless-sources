@@ -131,11 +131,11 @@ the package for you:
 | Step | Behaviour |
 |------|-----------|
 | `getStreamsByTrack` | Asks each source in list order. Searches "title artists", then the title alone |
-| Filtering | Results that are neither the track's ISRC nor credited to one of its artists are dropped (covers come back next to the original) |
+| Filtering | A result that is not the track's ISRC must have the same title **and** be credited to one of its artists. Covers come back next to the original, and on a soundtrack every track has the same composer, so neither check is enough alone. The closest title ranks first |
 | Length check | A match more than 15 s or 10 % off the track's length is another version (extended mix, live take) and is skipped. A match with the track's own ISRC fails only when it is off by a factor of two |
 | Stream check | The best match's stream is resolved before answering. A source that has the track but serves nothing hands over to the next source |
 | Failover | Within a source, hosts are tried in order; a sleeping or blocked one falls through to the next |
-| `getStreamsOfAudioSource` | Spotube saves each match and later asks for its streams again. The id (`<source>:<id>:<duration ms>`) is handed back to its source; if that fails, Spotube matches the track again |
+| `getStreamsOfAudioSource` | Spotube saves each match and later asks for its streams again. The id (`v2:<source>:<id>:<duration ms>`) is handed back to its source; if that fails, Spotube matches the track again. Ids from before 2.1.0 have no `v2` and are refused on purpose: 2.0 could save another song by the same artist, and refusing makes Spotube match those tracks again |
 
 **Monochrome** searches `/search/tracks?q=<title artists>`, keeps results that
 have a file behind them, and ranks an exact **ISRC** hit first. The stream is
@@ -174,7 +174,7 @@ reports it as such.
 
 ## Adding a source
 
-A source is one class implementing `LosslessSource` (`search` and `streams`)
+A source is one class implementing `TrackSource` (`search` and `streams`)
 in `lossless_sources/src/commonMain/.../audio/`, registered in
 `RealAudioAPI`'s source list, plus a probe in `tools/probe_sources.py` (and a
 place in its `TYPE_ORDER`).
