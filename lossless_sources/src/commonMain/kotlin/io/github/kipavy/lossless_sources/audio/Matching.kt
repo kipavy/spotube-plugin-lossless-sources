@@ -76,14 +76,28 @@ fun artistNames(track: MetadataTrack): List<String> {
     return track.album?.artists?.map { it.name }?.filter(::isRealName).orEmpty()
 }
 
-/** What to search for, best first: "title artists", then the title alone. */
+/**
+ * What to search for, best first: "title artists"; then, for a title like the
+ * YouTube Music plugin sends ("Album (Original Soundtrack) 103 - Song [Official
+ * Video]"), the song part at its end with the artists; then the title alone.
+ */
 fun searchQueries(track: MetadataTrack): List<String> {
     val names = artistNames(track)
     val queries = mutableListOf<String>()
-    if (names.isNotEmpty()) queries.add("${track.title} ${names.joinToString(", ")}")
+    if (names.isNotEmpty()) {
+        val credit = names.joinToString(", ")
+        queries.add("${track.title} $credit")
+        titleCandidates(track.title, names).drop(1).map(::withoutBrackets).distinct()
+            .filter { it != track.title }
+            .take(CLEANED_QUERIES)
+            .forEach { queries.add("$it $credit") }
+    }
     queries.add(track.title)
     return queries.distinct()
 }
+
+/** How many cleaned forms of a messy title are searched before the bare title. */
+private const val CLEANED_QUERIES = 2
 
 private fun sameIsrc(match: Match, isrc: String?): Boolean =
     !isrc.isNullOrBlank() && match.isrc?.uppercase() == isrc.uppercase()
@@ -104,34 +118,97 @@ fun titleWords(value: String): List<String> {
     return kept.split(' ').filter { it.isNotEmpty() }
 }
 
-/** Share of the longer title's words the other title also has, 0 to 1. */
+/**
+ * Share of the longer title's words the other title also has, 0 to 1. A word
+ * counts as often as it appears: "Gestral Village - Gestral Merchant" shares
+ * two of four words with "Gestral Village - Golgra", not two of three, while
+ * the catalogue typo "Gestral ViIllage - Gestral Merchant" still shares three.
+ */
 fun titleOverlap(a: String, b: String): Double {
     val x = titleWords(a)
     val y = titleWords(b)
     if (x.isEmpty() || y.isEmpty()) return 0.0
-    val shared = x.toSet().intersect(y.toSet()).size
-    return shared.toDouble() / maxOf(x.toSet().size, y.toSet().size)
+    val left = y.groupingBy { it }.eachCount().toMutableMap()
+    var shared = 0
+    for (word in x) {
+        val count = left[word] ?: 0
+        if (count > 0) {
+            shared++
+            left[word] = count - 1
+        }
+    }
+    return shared.toDouble() / maxOf(x.size, y.size)
 }
 
 /** How much of the title two titles must share when neither extends the other. */
 const val TITLE_OVERLAP = 0.6
 
+private val BRACKETED = Regex("""\s*[(\[][^()\[\]]*[)\]]""")
+private val SEGMENT_SEPARATOR = Regex("""\s+[-–—|]\s+""")
+
+/** The title without its "(...)" and "[...]" parts: "Aline [Official Music Video]" is "Aline". */
+fun withoutBrackets(title: String): String = title.replace(BRACKETED, "").trim()
+
+private fun words(title: String): String = titleWords(title).joinToString(" ")
+
 /**
- * Same song title: equal once simplified, one extends the other ("Walk" /
- * "Walk (Remastered)"), or most of the words are the same ("Song - 2011
- * Remaster" / "Song (Remastered 2011)").
+ * The song titles a track title may stand for, the title itself first.
+ *
+ * Metadata from YouTube carries video titles, not song titles: "Clair Obscur:
+ * Expedition 33 (Original Soundtrack) 103 - Sirène - Rouge d'Iris", or
+ * "Artist - Song [Official Music Video]". The song is at the end, so besides
+ * the title itself, every tail of its " - " or " | " separated parts counts
+ * ("Sirène - Rouge d'Iris", "Rouge d'Iris"), each with and without brackets.
+ * A part from the middle never counts alone: "Sirène" would accept "Sirène -
+ * Robe de Jour". Neither does a part that is only an artist's name.
+ */
+fun titleCandidates(title: String, artists: List<String> = emptyList()): List<String> {
+    val names = artists.map(::words).toSet()
+    val segments = title.split(SEGMENT_SEPARATOR).filter { it.isNotBlank() }
+    val found = mutableListOf<String>()
+    for (start in 1 until segments.size) {
+        val tail = segments.drop(start).joinToString(" - ")
+        found.add(tail)
+        found.add(withoutBrackets(tail))
+    }
+    found.add(withoutBrackets(title))
+    val kept = found.filter { words(it).isNotEmpty() && words(it) !in names }
+    return (listOf(title) + kept).distinctBy(::words)
+}
+
+/**
+ * Whether [found], a catalogue's song title, is the song [wanted] names.
+ *
+ * It is when it equals one of the wanted title's candidates, extends one
+ * ("Walk" asked, "Walk (Remastered)" found), or shares most of its words
+ * ("Song - 2011 Remaster" / "Song (Remastered 2011)"). Only the found title may
+ * extend: a long wanted title starting like a short one is another song, as
+ * "Clair Obscur: Expedition 33 ... - Sirène - Rouge d'Iris" is not the track
+ * "Clair-Obscur".
  *
  * Soundtracks are why this has to hold even when the artist matches: every
  * track of "Clair Obscur: Expedition 33" is credited to Lorien Testard, and
  * "Sirène - Rouge d'Iris" and "Sirène - Robe de Jour" share an artist, an
  * album and a length to within seconds. Only the title tells them apart.
  */
-fun sameTitle(a: String, b: String): Boolean {
-    val x = titleWords(a).joinToString(" ")
-    val y = titleWords(b).joinToString(" ")
-    if (x.isEmpty() || y.isEmpty()) return false
-    if (x == y || x.startsWith("$y ") || y.startsWith("$x ")) return true
-    return titleOverlap(a, b) >= TITLE_OVERLAP
+fun sameTitle(found: String, wanted: String, artists: List<String> = emptyList()): Boolean {
+    val have = words(found)
+    if (have.isEmpty()) return false
+    return titleCandidates(wanted, artists).any { candidate ->
+        val want = words(candidate)
+        want.isNotEmpty() && (have == want || have.startsWith("$want ") || titleOverlap(candidate, found) >= TITLE_OVERLAP)
+    }
+}
+
+/**
+ * How close [found] is to [wanted]: words they share, less words only [found]
+ * has. Ranks "World Map - Children of Lumière" above "World Map" for a wanted
+ * title holding both.
+ */
+fun titleScore(found: String, wanted: String): Int {
+    val have = titleWords(found).toSet()
+    val want = titleWords(wanted).toSet()
+    return have.intersect(want).size - (have - want).size
 }
 
 /**
@@ -145,16 +222,17 @@ fun sameTitle(a: String, b: String): Boolean {
  * "Weird Fishes" brings covers next to Radiohead.
  */
 fun plausible(found: List<Match>, track: MetadataTrack): List<Match> {
-    val wanted = artistNames(track).map(::simplify).filter { it.isNotEmpty() }
+    val names = artistNames(track)
+    val wanted = names.map(::simplify).filter { it.isNotEmpty() }
     val exact = found.filter { sameIsrc(it, track.isrcCode) }
     val rest = found.filter { !sameIsrc(it, track.isrcCode) }
 
     val credited = rest.filter { match ->
-        sameTitle(match.title, track.title) && (wanted.isEmpty() || match.artists.any { credit ->
+        sameTitle(match.title, track.title, names) && (wanted.isEmpty() || match.artists.any { credit ->
             val name = simplify(credit)
             name.isNotEmpty() && wanted.any { it.contains(name) || name.contains(it) }
         })
-    }.sortedByDescending { titleOverlap(it.title, track.title) }
+    }.sortedByDescending { titleScore(it.title, track.title) }
     return exact + credited
 }
 

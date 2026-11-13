@@ -12,13 +12,13 @@ import org.spotube.plugin_interfaces.plugin_apis.metadata.common.Thumbnail
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 
 /**
- * Match ids are `v2:<source type>:<reference>:<duration ms>`, so a match can go
+ * Match ids are `v3:<source type>:<reference>:<duration ms>`, so a match can go
  * back to the source that found it. Spotube keeps the match it was handed for
  * each track; the version prefix lets a release that matches better disown
  * the matches older ones made, so Spotube matches those tracks again.
  */
 private const val ID_SEPARATOR = ":"
-private const val ID_VERSION = "v2"
+private const val ID_VERSION = "v3"
 
 /** How many fitting matches of one source are tried for a stream before moving on to the next source. */
 private const val STREAM_ATTEMPTS = 3

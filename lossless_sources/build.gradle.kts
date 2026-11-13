@@ -14,7 +14,7 @@ spotubePlugin {
     name = "Lossless Sources"
     // The release workflow tags the release with this value, and the plugin's
     // update check compares installed copies against that tag.
-    version = "2.1.0"
+    version = "2.1.1"
     apiVersion = "0.1.0"
     description = "Lossless FLAC audio source for Spotube that needs no account and no configuration. " +
         "Routes each track to whichever public source can play it: Monochrome first, then any working " +
