@@ -1,12 +1,18 @@
 package io.github.kipavy.lossless_sources
 
 import io.github.kipavy.lossless_sources.audio.Match
+import io.github.kipavy.lossless_sources.audio.YouTube
 import io.github.kipavy.lossless_sources.audio.fitting
+import io.github.kipavy.lossless_sources.audio.sameTitle
+import io.github.kipavy.lossless_sources.core.Net
+import io.github.kipavy.lossless_sources.core.get
 import io.github.kipavy.lossless_sources.audio.searchQueries
 import io.github.kipavy.lossless_sources.audio.simplify
 import io.github.kipavy.lossless_sources.core.encode
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class MatchingTest {
     private fun match(ref: String, title: String, artist: String, durationMs: Long = 0, isrc: String? = null) =
@@ -65,5 +71,47 @@ class MatchingTest {
     @Test
     fun encodeIsUtf8PercentEncoding() {
         assertEquals("C%27est%20la%20cit%C3%A9", encode("C'est la cité"))
+    }
+
+    @Test
+    fun soundtrackTracksAreToldApartByTitle() {
+        // Every track of the album is credited to the same composer, at similar lengths.
+        val track = track("World Map - Children of Lumière", "Lorien Testard", durationMs = 151_000)
+        val found = listOf(
+            match("monoco", "Monoco", "Lorien Testard", 150_000),
+            match("toile", "World Map - Déchire la Toile", "Lorien Testard", 160_000),
+            match("name", "World Map - In Lumière's Name", "Lorien Testard", 155_000),
+            match("right", "World Map - Children of Lumière", "Lorien Testard", 151_000),
+        )
+        assertEquals(listOf("right"), fitting(found, track).map { it.ref })
+    }
+
+    @Test
+    fun closestTitleRanksFirst() {
+        val track = track("Song", "Artist")
+        val found = listOf(match("remaster", "Song (Remastered)", "Artist"), match("exact", "Song", "Artist"))
+        assertEquals(listOf("exact", "remaster"), fitting(found, track).map { it.ref })
+    }
+
+    @Test
+    fun titlesMatchAcrossDecorationAndScripts() {
+        assertTrue(sameTitle("Weird Fishes/Arpeggi", "Weird Fishes"))
+        assertTrue(sameTitle("Song - 2011 Remaster", "Song (Remastered 2011)"))
+        assertTrue(sameTitle("C'est la cité", "C’est La Cite"))
+        assertTrue(sameTitle("夜に駆ける", "夜に駆ける"))
+        assertFalse(sameTitle("Sirène - Rouge d'Iris", "Sirène - Robe de Jour"))
+        assertFalse(sameTitle("夜に駆ける", "群青"))
+    }
+
+    @Test
+    fun youtubeSongRowIsParsed() {
+        val match = YouTube.toMatch(Net.parseLenient(ytSong("vid1", "One More Time", "Daft Punk", "5:20"))!!["musicResponsiveListItemRenderer"]!!)!!
+        assertEquals("vid1", match.ref)
+        assertEquals(listOf("Daft Punk"), match.artists)
+        assertEquals("Discovery", match.album)
+        assertEquals(320_000, match.durationMs)
+        assertEquals("https://i.test/l.jpg", match.artwork)
+        assertEquals(3_723_000, YouTube.parseDuration("1:02:03"))
+        assertEquals(null, YouTube.parseDuration("12 M views"))
     }
 }

@@ -26,7 +26,7 @@ import org.spotube.plugin_interfaces.plugin_apis.audio.AudioStream
 class Monochrome(
     private val net: Net,
     private val retryDelaysMs: List<Long> = listOf(1_000, 2_000, 4_000),
-) : LosslessSource {
+) : TrackSource {
     override val type = "monochrome"
 
     override suspend fun search(query: String, bases: List<String>): List<Match> {

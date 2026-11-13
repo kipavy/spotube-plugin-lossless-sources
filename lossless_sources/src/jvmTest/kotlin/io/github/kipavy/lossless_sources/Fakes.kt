@@ -18,6 +18,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 class FakeHttp : HttpClientAPI {
     private val routes = mutableListOf<Pair<String, (String) -> HttpResponse>>()
     val calls = mutableListOf<String>()
+    val bodies = mutableListOf<String?>()
 
     fun on(method: HttpMethod, prefix: String, answer: (String) -> HttpResponse) {
         routes.add("${method.value} $prefix" to answer)
@@ -37,6 +38,7 @@ class FakeHttp : HttpClientAPI {
     ): HttpResponse {
         val key = "${method.value} $url"
         calls.add(key)
+        bodies.add(body)
         val route = routes.filter { key.startsWith(it.first) }.maxByOrNull { it.first.length }
             ?: return HttpResponse(404, emptyMap(), "{\"detail\":\"not found\"}")
         return route.second(url)
@@ -85,6 +87,38 @@ fun monochromeItem(id: String, title: String, artist: String, durationMs: Long, 
 
 fun hifiItem(id: Long, title: String, artist: String, durationSec: Long, isrc: String = "") =
     """{"id":$id,"title":"$title","duration":$durationSec,"isrc":"$isrc","artist":{"name":"$artist"},"artists":[{"name":"$artist"}],"album":{"title":"Album","cover":"aa-bb-cc"}}"""
+
+/** A YouTube Music song row as the "Songs" search filter returns it. */
+fun ytSong(videoId: String, title: String, artist: String, length: String) = """
+    {"musicResponsiveListItemRenderer":{
+      "playlistItemData":{"videoId":"$videoId"},
+      "thumbnail":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://i.test/s.jpg"},{"url":"https://i.test/l.jpg"}]}}},
+      "flexColumns":[
+        {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"$title","navigationEndpoint":{"watchEndpoint":{"videoId":"$videoId"}}}]}}},
+        {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[
+          {"text":"$artist","navigationEndpoint":{"browseEndpoint":{"browseId":"UC1","browseEndpointContextSupportedConfigs":{"browseEndpointContextMusicConfig":{"pageType":"MUSIC_PAGE_TYPE_ARTIST"}}}}},
+          {"text":" • "},
+          {"text":"Discovery","navigationEndpoint":{"browseEndpoint":{"browseId":"MPRE1","browseEndpointContextSupportedConfigs":{"browseEndpointContextMusicConfig":{"pageType":"MUSIC_PAGE_TYPE_ALBUM"}}}}},
+          {"text":" • "},
+          {"text":"$length"}
+        ]}}}
+      ]
+    }}
+""".trimIndent()
+
+fun ytSearch(vararg rows: String) =
+    """{"contents":{"tabbedSearchResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[{"musicShelfRenderer":{"contents":[${rows.joinToString(",")}]}}]}}}}]}}}"""
+
+/** A player answer with an Opus stream at [opusUrl] and, optionally, an AAC one; plus a video format to ignore. */
+fun ytPlayer(opusUrl: String, aacUrl: String? = null): String {
+    val formats = mutableListOf(
+        """{"itag":251,"mimeType":"audio/webm; codecs=\"opus\"","bitrate":140000,"averageBitrate":130000,"url":"$opusUrl"}""",
+        """{"itag":137,"mimeType":"video/mp4; codecs=\"avc1.640028\"","bitrate":4000000,"url":"https://rr.test/137"}""",
+        """{"itag":250,"mimeType":"audio/webm; codecs=\"opus\"","bitrate":70000,"signatureCipher":"s=abc"}""",
+    )
+    if (aacUrl != null) formats.add("""{"itag":140,"mimeType":"audio/mp4; codecs=\"mp4a.40.2\"","bitrate":130000,"averageBitrate":129000,"url":"$aacUrl"}""")
+    return """{"playabilityStatus":{"status":"OK"},"streamingData":{"adaptiveFormats":[${formats.joinToString(",")}]}}"""
+}
 
 @OptIn(ExperimentalEncodingApi::class)
 fun btsTrack(url: String, codecs: String = "flac", sampleRate: Int = 44100): String {

@@ -16,8 +16,8 @@ data class Match(
     val externalUri: String?,
 )
 
-/** A lossless catalogue reachable through one or more interchangeable hosts. */
-interface LosslessSource {
+/** A catalogue reachable through one or more interchangeable hosts: a lossless one, or the YouTube fallback. */
+interface TrackSource {
     /** The `type` this source has in sources.json, also the prefix of its match ids. */
     val type: String
 
@@ -88,38 +88,73 @@ fun searchQueries(track: MetadataTrack): List<String> {
 private fun sameIsrc(match: Match, isrc: String?): Boolean =
     !isrc.isNullOrBlank() && match.isrc?.uppercase() == isrc.uppercase()
 
-/** Same song title: equal once simplified, or one extends the other ("Walk" / "Walk (Remastered)"). */
+/**
+ * A title as words: case dropped, Latin accents folded, and "/", "-", brackets
+ * and other separators read as spaces, so "Weird Fishes/Arpeggi" has the words
+ * "weird fishes arpeggi". Apostrophes are dropped, keeping "C'est" one word.
+ * Letters of any script are kept: a Japanese or Cyrillic title has words too.
+ */
+fun titleWords(value: String): List<String> {
+    val kept = StringBuilder()
+    for (raw in value.lowercase()) {
+        if (raw == '\'' || raw == '’') continue
+        val char = FOLDED[raw] ?: raw
+        kept.append(if (char.isLetterOrDigit()) char else ' ')
+    }
+    return kept.split(' ').filter { it.isNotEmpty() }
+}
+
+/** Share of the longer title's words the other title also has, 0 to 1. */
+fun titleOverlap(a: String, b: String): Double {
+    val x = titleWords(a)
+    val y = titleWords(b)
+    if (x.isEmpty() || y.isEmpty()) return 0.0
+    val shared = x.toSet().intersect(y.toSet()).size
+    return shared.toDouble() / maxOf(x.toSet().size, y.toSet().size)
+}
+
+/** How much of the title two titles must share when neither extends the other. */
+const val TITLE_OVERLAP = 0.6
+
+/**
+ * Same song title: equal once simplified, one extends the other ("Walk" /
+ * "Walk (Remastered)"), or most of the words are the same ("Song - 2011
+ * Remaster" / "Song (Remastered 2011)").
+ *
+ * Soundtracks are why this has to hold even when the artist matches: every
+ * track of "Clair Obscur: Expedition 33" is credited to Lorien Testard, and
+ * "Sirène - Rouge d'Iris" and "Sirène - Robe de Jour" share an artist, an
+ * album and a length to within seconds. Only the title tells them apart.
+ */
 fun sameTitle(a: String, b: String): Boolean {
-    val x = simplify(a)
-    val y = simplify(b)
+    val x = titleWords(a).joinToString(" ")
+    val y = titleWords(b).joinToString(" ")
     if (x.isEmpty() || y.isEmpty()) return false
-    return x == y || x.startsWith("$y ") || y.startsWith("$x ")
+    if (x == y || x.startsWith("$y ") || y.startsWith("$x ")) return true
+    return titleOverlap(a, b) >= TITLE_OVERLAP
 }
 
 /**
- * Drops results that only share the title, and ranks an exact ISRC hit first.
+ * Keeps the results that are this song, best first: an exact ISRC hit, then
+ * the closest titles.
  *
- * Searches weigh the title, not the artist, so asking for "Cars and Girls Cliff
- * Richard" comes back full of Prefab Sprout, and "Weird Fishes" brings covers
- * next to Radiohead. An ISRC hit is the recording itself and always survives;
- * anything else has to be credited to one of the track's artists. When the
- * metadata has no usable artist, the title has to match instead.
+ * An ISRC hit is the recording itself and always survives. Anything else needs
+ * the same title and, when the metadata has a usable artist, a credit to one
+ * of the track's artists: searches weigh the title, not the artist, so asking
+ * for "Cars and Girls Cliff Richard" comes back full of Prefab Sprout, and
+ * "Weird Fishes" brings covers next to Radiohead.
  */
 fun plausible(found: List<Match>, track: MetadataTrack): List<Match> {
     val wanted = artistNames(track).map(::simplify).filter { it.isNotEmpty() }
     val exact = found.filter { sameIsrc(it, track.isrcCode) }
     val rest = found.filter { !sameIsrc(it, track.isrcCode) }
 
-    val credited = if (wanted.isEmpty()) {
-        rest.filter { sameTitle(it.title, track.title) }
-    } else {
-        rest.filter { match ->
-            match.artists.any { credit ->
-                val name = simplify(credit)
-                name.isNotEmpty() && wanted.any { it.contains(name) || name.contains(it) }
-            }
-        }
-    }
+    val credited = rest.filter { match ->
+        sameTitle(match.title, track.title) && (wanted.isEmpty() || match.artists.any { credit ->
+            val name = simplify(credit)
+            name.isNotEmpty() && wanted.any { it.contains(name) || name.contains(it) }
+        })
+    }.sortedByDescending { titleOverlap(it.title, track.title) }
     return exact + credited
 }
 

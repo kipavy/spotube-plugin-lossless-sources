@@ -26,8 +26,9 @@ class Net(private val http: HttpClientAPI) {
         method: HttpMethod,
         url: String,
         headers: Map<String, String> = DEFAULT_HEADERS,
+        body: String? = null,
     ): HttpResponse? = try {
-        http.request(method, url, headers, null)
+        http.request(method, url, headers, body)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -42,6 +43,13 @@ class Net(private val http: HttpClientAPI) {
     /** The body as JSON, or null unless the host answered 200 with valid JSON. */
     suspend fun getJson(url: String, headers: Map<String, String> = DEFAULT_HEADERS): JsonElement? {
         val res = get(url, headers) ?: return null
+        if (res.statusCode != 200) return null
+        return parse(res.body)
+    }
+
+    /** POSTs [body] and reads the answer as JSON, or null unless the host answered 200 with valid JSON. */
+    suspend fun postJson(url: String, body: String, headers: Map<String, String>): JsonElement? {
+        val res = request(HttpMethod.Post, url, headers, body) ?: return null
         if (res.statusCode != 200) return null
         return parse(res.body)
     }

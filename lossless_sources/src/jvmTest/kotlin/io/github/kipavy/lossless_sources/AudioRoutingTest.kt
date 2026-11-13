@@ -3,6 +3,7 @@ package io.github.kipavy.lossless_sources
 import io.github.kipavy.lossless_sources.audio.HifiApi
 import io.github.kipavy.lossless_sources.audio.Monochrome
 import io.github.kipavy.lossless_sources.audio.RealAudioAPI
+import io.github.kipavy.lossless_sources.audio.YouTube
 import io.github.kipavy.lossless_sources.core.SourceStore
 import kotlinx.coroutines.test.runTest
 import org.spotube.plugin_interfaces.host_apis.HttpMethod
@@ -22,7 +23,7 @@ class AudioRoutingTest {
         http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("monochrome" to MONO, "hifi-api" to HIFI))
         val net = net(http)
         val store = SourceStore(net, FakeStorage(), LIST_URL)
-        return RealAudioAPI(net, store, listOf(Monochrome(net, emptyList()), HifiApi(net, emptyList())))
+        return RealAudioAPI(net, store, listOf(Monochrome(net, emptyList()), HifiApi(net, emptyList())), fallback = null)
     }
 
     @Test
@@ -38,7 +39,7 @@ class AudioRoutingTest {
         val result = api(http).getStreamsByTrack(daftPunk)
 
         val streamed = assertIs<AudioSource.Streamed>(result.single())
-        assertEquals("monochrome:7:320357", streamed.id)
+        assertEquals("v2:monochrome:7:320357", streamed.id)
         assertEquals(1.0f, streamed.confidence)
         val stream = assertIs<AudioStream.Lossless>(streamed.streams.single())
         assertEquals("$MONO/track/7", stream.url)
@@ -62,7 +63,7 @@ class AudioRoutingTest {
         val result = api(http).getStreamsByTrack(daftPunk)
 
         val streamed = assertIs<AudioSource.Streamed>(result.first())
-        assertEquals("hifi-api:42:320000", streamed.id)
+        assertEquals("v2:hifi-api:42:320000", streamed.id)
         assertEquals("https://resources.tidal.com/images/aa/bb/cc/640x640.jpg", streamed.thumbnails.single().url)
         // Same URL for two qualities is kept once; the AAC one is a separate stream.
         assertEquals(2, streamed.streams.size)
@@ -82,7 +83,7 @@ class AudioRoutingTest {
         }
         val net = net(http)
         http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("hifi-api" to HIFI))
-        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(HifiApi(net, listOf(0L))))
+        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(HifiApi(net, listOf(0L))), fallback = null)
 
         val result = api.getStreamsByTrack(daftPunk)
 
@@ -113,7 +114,7 @@ class AudioRoutingTest {
     fun savedMatchIsResolvedAgainstItsSource() = runTest {
         val http = FakeHttp()
         http.status(HttpMethod.Head, "$MONO/track/7", 200, mapOf("content-length" to "40000000"))
-        val saved = AudioSource.Basic("monochrome:7:320357", "One More Time", "Daft Punk", null, emptyList(), null, 1f)
+        val saved = AudioSource.Basic("v2:monochrome:7:320357", "One More Time", "Daft Punk", null, emptyList(), null, 1f)
 
         val streamed = api(http).getStreamsOfAudioSource(saved).single()
 
@@ -123,7 +124,93 @@ class AudioRoutingTest {
     @Test
     fun matchFromAnUnknownSourceAsksSpotubeToRematch() = runTest {
         val http = FakeHttp()
-        val saved = AudioSource.Basic("youtube:abc", "x", null, null, emptyList(), null, 1f)
+        val saved = AudioSource.Basic("v2:napster:abc", "x", null, null, emptyList(), null, 1f)
         assertTrue(api(http).getStreamsOfAudioSource(saved).isEmpty())
+    }
+
+    @Test
+    fun matchSavedByAnOlderReleaseIsRematched() = runTest {
+        val http = FakeHttp()
+        http.status(HttpMethod.Head, "$MONO/track/7", 200, mapOf("content-length" to "40000000"))
+        val saved = AudioSource.Basic("monochrome:7:320357", "Monoco", "Lorien Testard", null, emptyList(), null, 1f)
+        assertTrue(api(http).getStreamsOfAudioSource(saved).isEmpty())
+    }
+
+    @Test
+    fun anotherTrackByTheSameArtistIsNeverPlayed() = runTest {
+        val http = FakeHttp()
+        val wanted = track("Sirène - Rouge d'Iris", "Lorien Testard")
+        http.json(
+            HttpMethod.Get, "$MONO/search/tracks",
+            body = """{"tracks":[${monochromeItem("1", "Sirène - Rouge d'Iris", "Lorien Testard", 199_000)},""" +
+                """${monochromeItem("2", "Sirène - Robe de Jour", "Lorien Testard", 141_000)},""" +
+                """${monochromeItem("3", "Monoco", "Lorien Testard", 190_000)}]}""",
+        )
+        // The right file is down: the others must not stand in for it.
+        http.status(HttpMethod.Head, "$MONO/track/1", 404)
+        http.status(HttpMethod.Head, "$MONO/track/", 200)
+
+        assertTrue(api(http).getStreamsByTrack(wanted).isEmpty())
+        assertTrue(http.calls.none { it == "HEAD $MONO/track/2" || it == "HEAD $MONO/track/3" })
+    }
+
+    @Test
+    fun youtubePlaysOnlyWhenNoLosslessSourceCan() = runTest {
+        val http = FakeHttp()
+        http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("monochrome" to MONO))
+        http.json(HttpMethod.Get, "$MONO/search/tracks", body = """{"tracks":[]}""")
+        http.json(HttpMethod.Post, "${YouTube.MUSIC}/youtubei/v1/search", body = ytSearch(ytSong("vid1", "One More Time", "Daft Punk", "5:20")))
+        http.json(HttpMethod.Post, "${YouTube.WWW}/youtubei/v1/player", body = ytPlayer("https://rr.test/251", "https://rr.test/140"))
+        http.status(HttpMethod.Get, "https://rr.test/251", 206)
+        val net = net(http)
+        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(Monochrome(net, emptyList())), YouTube(net))
+
+        val streamed = assertIs<AudioSource.Streamed>(api.getStreamsByTrack(daftPunk).single())
+
+        assertEquals("v2:youtube:vid1:320000", streamed.id)
+        val best = assertIs<AudioStream.Lossy>(streamed.streams.first())
+        assertEquals("opus", best.codec)
+        assertEquals("webm", best.container)
+        assertEquals(listOf("https://rr.test/251", "https://rr.test/140"), streamed.streams.map { it.url })
+        assertTrue(http.calls.indexOfFirst { it.startsWith("GET $MONO") } < http.calls.indexOfFirst { it.startsWith("POST") })
+    }
+
+    @Test
+    fun youtubeIsNotAskedWhenALosslessSourcePlays() = runTest {
+        val http = FakeHttp()
+        http.json(HttpMethod.Get, LIST_URL, body = sourcesJson("monochrome" to MONO))
+        http.json(HttpMethod.Get, "$MONO/search/tracks", body = """{"tracks":[${monochromeItem("7", "One More Time", "Daft Punk", 320_357)}]}""")
+        http.status(HttpMethod.Head, "$MONO/track/7", 200)
+        val net = net(http)
+        val api = RealAudioAPI(net, SourceStore(net, FakeStorage(), LIST_URL), listOf(Monochrome(net, emptyList())), YouTube(net))
+
+        assertIs<AudioStream.Lossless>(assertIs<AudioSource.Streamed>(api.getStreamsByTrack(daftPunk).first()).streams.single())
+        assertTrue(http.calls.none { it.startsWith("POST") })
+    }
+
+    @Test
+    fun youtubeClientThatIsRefusedHandsOverToTheNext() = runTest {
+        val http = FakeHttp()
+        var players = 0
+        http.on(HttpMethod.Post, "${YouTube.WWW}/youtubei/v1/player") {
+            players++
+            if (players == 1) HttpResponse(200, emptyMap(), """{"playabilityStatus":{"status":"LOGIN_REQUIRED"}}""")
+            else HttpResponse(200, emptyMap(), ytPlayer("https://rr.test/251"))
+        }
+        http.status(HttpMethod.Get, "https://rr.test/251", 200)
+
+        val streams = YouTube(net(http)).streams("vid1", 0, emptyList())
+
+        assertEquals(2, players)
+        assertEquals("https://rr.test/251", streams.single().url)
+    }
+
+    @Test
+    fun youtubeStreamTheCdnRefusesIsNotHandedOver() = runTest {
+        val http = FakeHttp()
+        http.json(HttpMethod.Post, "${YouTube.WWW}/youtubei/v1/player", body = ytPlayer("https://rr.test/251"))
+        http.status(HttpMethod.Get, "https://rr.test/251", 403)
+
+        assertTrue(YouTube(net(http)).streams("vid1", 0, emptyList()).isEmpty())
     }
 }
