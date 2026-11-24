@@ -1,12 +1,7 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-11-23T21:23:12Z",
-  "sources": [
-    {
-      "type": "monochrome",
-      "base": "https://tracks.monochrome.st"
-    }
-  ],
+  "updated": "2026-11-24T06:01:53Z",
+  "sources": [],
   "candidates": [
     {
       "type": "monochrome",
@@ -104,17 +99,17 @@
   "status": {
     "monochrome https://tracks.monochrome.st": {
       "search": "ok",
-      "stream": "ok flac",
-      "playable": true
+      "stream": "206 not flac (b'')",
+      "playable": false
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
-      "search": "ok",
-      "stream": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
+      "stream": null,
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
-      "search": "429 Upstream API error",
-      "stream": null,
+      "search": "ok",
+      "stream": "403 Upstream API error",
       "playable": false
     },
     "hifi-api https://api.monochrome.tf": {
@@ -213,11 +208,11 @@
       "playable": false
     },
     "hifi-api https://madeinheaven.032416.xyz": {
-      "search": "404 {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.5\"",
+      "search": "502 The origin web server returned an invalid or incomplete response to Cloudflare. This typically indicates the origin is overloaded or misconfigured.",
       "stream": null,
       "playable": false
     }
   },
-  "playable_count": 1,
-  "announced_recovery": true
+  "playable_count": 0,
+  "announced_recovery": false
 }
