@@ -1,7 +1,12 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-11-26T15:14:00Z",
-  "sources": [],
+  "updated": "2026-11-26T23:52:02Z",
+  "sources": [
+    {
+      "type": "monochrome",
+      "base": "https://tracks.monochrome.st"
+    }
+  ],
   "candidates": [
     {
       "type": "monochrome",
@@ -98,9 +103,9 @@
   ],
   "status": {
     "monochrome https://tracks.monochrome.st": {
-      "search": "200 {\"tracks\":[],\"releases\":[],\"artists\":[],\"topResults\":[],\"use",
-      "stream": null,
-      "playable": false
+      "search": "ok",
+      "stream": "ok flac",
+      "playable": true
     },
     "hifi-api https://hifi-api-w9y8.onrender.com": {
       "search": "503 All accounts are inactive, rate-limited, or have expired tokens",
@@ -108,8 +113,8 @@
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
-      "search": "ok",
-      "stream": "403 Upstream API error",
+      "search": "429 Upstream API error",
+      "stream": null,
       "playable": false
     },
     "hifi-api https://api.monochrome.tf": {
@@ -213,6 +218,6 @@
       "playable": false
     }
   },
-  "playable_count": 0,
+  "playable_count": 1,
   "announced_recovery": false
 }
