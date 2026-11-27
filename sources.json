@@ -1,6 +1,6 @@
 {
   "_comment": "Maintained by .github/workflows/probe-sources.yml. `sources` holds only entries that served real audio at the last probe, in preference order, and the plugin reads it at startup. Add hosts to probe under `candidates`; never hand-edit `sources` or `status`.",
-  "updated": "2026-11-27T08:29:58Z",
+  "updated": "2026-11-27T18:58:12Z",
   "sources": [
     {
       "type": "monochrome",
@@ -113,8 +113,8 @@
       "playable": false
     },
     "hifi-api https://hifi-api-bffw.onrender.com": {
-      "search": "ok",
-      "stream": "403 Upstream API error",
+      "search": "429 Upstream API error",
+      "stream": null,
       "playable": false
     },
     "hifi-api https://api.monochrome.tf": {
@@ -123,7 +123,7 @@
       "playable": false
     },
     "hifi-api https://monochrome-api.samidy.com": {
-      "search": "429 Upstream API error",
+      "search": "401 Token refresh failed: Client error '403 Forbidden' for url 'https://auth.tidal.com/v1/oauth2/token'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
       "stream": null,
       "playable": false
     },
